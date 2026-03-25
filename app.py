@@ -4,18 +4,16 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import requests
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Universal Live Ratio Dashboard", layout="wide")
-st.title("🕯️ Universal Live Ratio Dashboard (Pro)")
-st.markdown("Build relative rotation charts, apply indicators, and export your data.")
+st.title("📊 Universal Live Ratio Dashboard (TradingView Edition)")
+st.markdown("Build relative rotation charts with TradingView aesthetics and drawing tools.")
 
 # --- STATE MANAGEMENT ---
-# Updated default dictionary to use highly reliable Yahoo Finance tickers
 if 'asset_dict' not in st.session_state:
     st.session_state.asset_dict = {
-        "Broad Market 500 (Benchmark)": "BSE-500.BO", # Swapped from ^CRSL500 for API stability
+        "Broad Market 500 (Benchmark)": "BSE-500.BO", 
         "Nifty 50": "^NSEI",
         "Nifty Next 50": "^NN50",
         "Nifty Bank": "^NSEBANK",
@@ -108,21 +106,19 @@ def get_data(ticker, period, interval, source):
 
 # --- CHART GENERATION & DATA EXPORT ---
 st.markdown("---")
-st.subheader(f"Ratio: {selected_asset_name} / {benchmark_name} ({interval_selection})")
+st.subheader(f"{selected_asset_name} / {benchmark_name} ({interval_selection})")
 
-with st.spinner("Fetching data and calculating indicators..."):
+with st.spinner("Fetching data and generating TradingView visual..."):
     
     sector_data = get_data(sector_ticker, selected_period, selected_interval, data_source)
     benchmark_data = get_data(benchmark_ticker, selected_period, selected_interval, data_source)
 
-    # --- UPGRADED ERROR HANDLING ---
     if sector_data is None and benchmark_data is None:
-        st.error(f"⚠️ Failed to download data for both {sector_ticker} AND {benchmark_ticker}. Please check your internet connection or the tickers.")
+        st.error(f"⚠️ Failed to download data for both {sector_ticker} AND {benchmark_ticker}.")
     elif sector_data is None:
-        st.error(f"⚠️ Failed to download data for Numerator: **{selected_asset_name} ({sector_ticker})**. Yahoo Finance may have delisted this ticker.")
+        st.error(f"⚠️ Failed to download data for Numerator: **{selected_asset_name} ({sector_ticker})**.")
     elif benchmark_data is None:
-        st.error(f"⚠️ Failed to download data for Denominator: **{benchmark_name} ({benchmark_ticker})**. Yahoo Finance may have delisted this ticker.")
-    # -------------------------------
+        st.error(f"⚠️ Failed to download data for Denominator: **{benchmark_name} ({benchmark_ticker})**.")
     
     elif sector_data is not None and benchmark_data is not None:
         if isinstance(sector_data.columns, pd.MultiIndex):
@@ -133,21 +129,17 @@ with st.spinner("Fetching data and calculating indicators..."):
         df.dropna(subset=['Close_sec', 'Close_bench'], inplace=True)
 
         if not df.empty:
-            # 1. Calculate Ratio OHLC
             df['Ratio_Open'] = df['Open_sec'] / df['Open_bench']
             df['Ratio_High'] = df['High_sec'] / df['High_bench']
             df['Ratio_Low'] = df['Low_sec'] / df['Low_bench']
             df['Ratio_Close'] = df['Close_sec'] / df['Close_bench']
 
-            # 2. Normalize to Base 100
             base_value = df['Ratio_Close'].iloc[0]
             for col in ['Ratio_Open', 'Ratio_High', 'Ratio_Low', 'Ratio_Close']:
                 df[col] = (df[col] / base_value) * 100
 
-            # 3. Calculate Technical Indicators
             c = df['Ratio_Close']
             
-            # Overlays
             if "50 SMA" in selected_overlays: df['50 SMA'] = c.rolling(window=50).mean()
             if "100 SMA" in selected_overlays: df['100 SMA'] = c.rolling(window=100).mean()
             if "21 EMA" in selected_overlays: df['21 EMA'] = c.ewm(span=21, adjust=False).mean()
@@ -165,7 +157,6 @@ with st.spinner("Fetching data and calculating indicators..."):
                     df['Cum_Vol_Price'] = (typical_price * volume).cumsum()
                     df['AVWAP'] = df['Cum_Vol_Price'] / df['Cum_Vol']
 
-            # Oscillators
             if "RSI (14)" in selected_oscillators:
                 df['RSI'] = calculate_rsi(c, 14)
                 
@@ -174,7 +165,6 @@ with st.spinner("Fetching data and calculating indicators..."):
                 df['MACD_Signal'] = df['MACD_Line'].ewm(span=9, adjust=False).mean()
                 df['MACD_Hist'] = df['MACD_Line'] - df['MACD_Signal']
 
-            # 4. Dynamic Subplot Layout
             num_rows = 1
             row_heights = [0.6] if selected_oscillators else [1.0]
             
@@ -195,51 +185,84 @@ with st.spinner("Fetching data and calculating indicators..."):
                 row_heights=row_heights
             )
 
+            # --- TRADINGVIEW COLORS ---
+            TV_GREEN = '#089981'
+            TV_RED = '#F23645'
+            TV_BLUE = '#2962FF'
+            TV_GRID = '#E0E3EB'
+
             # PLOT ROW 1: MAIN CHART
             if chart_type == "Line":
-                fig.add_trace(go.Scatter(x=df.index, y=df['Ratio_Close'], mode='lines', name='Ratio', line=dict(color='#00ffcc', width=2)), row=1, col=1)
+                fig.add_trace(go.Scatter(x=df.index, y=df['Ratio_Close'], mode='lines', name='Ratio', line=dict(color=TV_BLUE, width=2)), row=1, col=1)
             elif chart_type == "Bar (OHLC)":
-                fig.add_trace(go.Ohlc(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], name='Ratio', increasing_line_color='#26a69a', decreasing_line_color='#ef5350'), row=1, col=1)
+                fig.add_trace(go.Ohlc(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], name='Ratio', increasing_line_color=TV_GREEN, decreasing_line_color=TV_RED), row=1, col=1)
             elif chart_type == "Hollow Candlestick":
-                fig.add_trace(go.Candlestick(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], name='Ratio', increasing_line_color='#26a69a', increasing_fillcolor='rgba(0,0,0,0)', decreasing_line_color='#ef5350', decreasing_fillcolor='#ef5350'), row=1, col=1)
+                fig.add_trace(go.Candlestick(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], name='Ratio', increasing_line_color=TV_GREEN, increasing_fillcolor='rgba(0,0,0,0)', decreasing_line_color=TV_RED, decreasing_fillcolor='rgba(0,0,0,0)'), row=1, col=1)
             else:
-                fig.add_trace(go.Candlestick(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], name='Ratio', increasing_line_color='#26a69a', increasing_fillcolor='#26a69a', decreasing_line_color='#ef5350', decreasing_fillcolor='#ef5350'), row=1, col=1)
+                fig.add_trace(go.Candlestick(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], name='Ratio', increasing_line_color=TV_GREEN, increasing_fillcolor=TV_GREEN, decreasing_line_color=TV_RED, decreasing_fillcolor=TV_RED), row=1, col=1)
 
-            colors = {"21 EMA": "#FF9800", "50 SMA": "#2196F3", "63 EMA": "#E91E63", "100 SMA": "#9C27B0", "200 EMA": "#F44336", "30 WMA": "#4CAF50", "100 WMA": "#8BC34A", "200 WMA": "#FFEB3B", "AVWAP": "#FFFFFF"}
+            colors = {"21 EMA": "#FF9800", "50 SMA": TV_BLUE, "63 EMA": "#E91E63", "100 SMA": "#9C27B0", "200 EMA": "#F44336", "30 WMA": "#4CAF50", "100 WMA": "#8BC34A", "200 WMA": "#FFEB3B", "AVWAP": "#000000"}
             for ind in selected_overlays:
                 if ind in df.columns:
-                    fig.add_trace(go.Scatter(x=df.index, y=df[ind], mode='lines', name=ind, line=dict(color=colors.get(ind, '#ffffff'), width=1.5), hoverinfo='y+name'), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df.index, y=df[ind], mode='lines', name=ind, line=dict(color=colors.get(ind, '#000000'), width=1.5), hoverinfo='y+name'), row=1, col=1)
 
             # PLOT ROW 2/3: OSCILLATORS
             current_row = 2
             if "RSI (14)" in selected_oscillators:
-                fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], mode='lines', name='RSI 14', line=dict(color='#B388FF', width=1.5)), row=current_row, col=1)
-                fig.add_hline(y=70, line_dash="dot", line_color="#ef5350", line_width=1, row=current_row, col=1)
-                fig.add_hline(y=30, line_dash="dot", line_color="#26a69a", line_width=1, row=current_row, col=1)
+                fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], mode='lines', name='RSI 14', line=dict(color='#7E57C2', width=1.5)), row=current_row, col=1)
+                fig.add_hline(y=70, line_dash="dash", line_color=TV_GRID, line_width=1.5, row=current_row, col=1)
+                fig.add_hline(y=30, line_dash="dash", line_color=TV_GRID, line_width=1.5, row=current_row, col=1)
                 fig.update_yaxes(title_text="RSI", range=[0, 100], row=current_row, col=1)
                 current_row += 1
 
             if "MACD (12, 26, 9)" in selected_oscillators:
-                fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Line'], mode='lines', name='MACD', line=dict(color='#2196F3', width=1.5)), row=current_row, col=1)
+                fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Line'], mode='lines', name='MACD', line=dict(color=TV_BLUE, width=1.5)), row=current_row, col=1)
                 fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Signal'], mode='lines', name='Signal', line=dict(color='#FF9800', width=1.5)), row=current_row, col=1)
-                hist_colors = ['#26a69a' if val >= 0 else '#ef5350' for val in df['MACD_Hist']]
+                hist_colors = ['rgba(8, 153, 129, 0.5)' if val >= 0 else 'rgba(242, 54, 69, 0.5)' for val in df['MACD_Hist']]
                 fig.add_trace(go.Bar(x=df.index, y=df['MACD_Hist'], name='Histogram', marker_color=hist_colors), row=current_row, col=1)
                 fig.update_yaxes(title_text="MACD", row=current_row, col=1)
 
-            # FORMAT LAYOUT
-            total_fig_height = 600 if num_rows == 1 else (750 if num_rows == 2 else 900)
+            # --- FORMAT LAYOUT (TRADINGVIEW STYLE) ---
+            total_fig_height = 650 if num_rows == 1 else (800 if num_rows == 2 else 950)
+            
             fig.update_layout(
-                template="plotly_dark", 
+                template="plotly_white", # Light theme
+                plot_bgcolor='white',
+                paper_bgcolor='white',
                 xaxis_rangeslider_visible=False, 
                 height=total_fig_height, 
-                margin=dict(l=20, r=20, t=20, b=20),
+                margin=dict(l=10, r=50, t=10, b=20),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                hovermode="x unified"
+                hovermode="x unified",
+                # Enable structural drawing modes
+                dragmode="pan" 
             )
-            fig.update_xaxes(rangeslider_visible=False)
             
-            # --- RENDER CHART ---
-            st.plotly_chart(fig, use_container_width=True)
+            # Styling Axes like TradingView (Right side Y-axis, faint grid lines)
+            fig.update_xaxes(
+                showgrid=True, gridwidth=1, gridcolor=TV_GRID, zeroline=False,
+                rangeslider_visible=False
+            )
+            fig.update_yaxes(
+                showgrid=True, gridwidth=1, gridcolor=TV_GRID, zeroline=False,
+                side="right", # Moves price to the right side
+                tickformat=".2f"
+            )
+            
+            # --- RENDER CHART WITH DRAWING CONFIG ---
+            # This config injects the drawing tools into the modebar in the top right
+            chart_config = {
+                'modeBarButtonsToAdd': [
+                    'drawline',       # For Trendlines and Horizontal Rays
+                    'drawrect',       # For Box consolidation zones
+                    'eraseshape'      # To delete drawings
+                ],
+                'displayModeBar': True,
+                'displaylogo': False,
+                'scrollZoom': True    # Allows scrolling to zoom like TradingView
+            }
+
+            st.plotly_chart(fig, use_container_width=True, config=chart_config)
 
             # --- EXPORT DATA SECTION ---
             st.markdown("---")
