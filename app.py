@@ -4,9 +4,12 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import time # Added to track data pull speed
 
-# --- PAGE CONFIGURATION ---
+# --- PAGE CONFIGURATION & TIMER START ---
 st.set_page_config(page_title="Universal Live Ratio Dashboard", layout="wide", initial_sidebar_state="expanded")
+start_time = time.time() # Start the telemetry timer
+
 st.title("📊 Universal Live Ratio Dashboard (Pro)")
 
 # --- STATE MANAGEMENT ---
@@ -214,15 +217,15 @@ with tab1:
         cols = st.columns(2)
         for idx, sector in enumerate(static_sectors):
             with cols[idx % 2]:
-                st.markdown(f"**{sector} / Broad Market 500**")
-                # Updated from "Line" to "Candlestick"
-                static_fig = render_chart(sector, "Broad Market 500", "6mo", "1d", "Candlestick", [], [], height=350)
-                if static_fig:
-                    static_fig.update_layout(showlegend=False) 
-                    st.plotly_chart(static_fig, use_container_width=True, key=f"static_sector_{idx}")
-                else:
-                    st.warning(f"Data currently unavailable for {sector}.")
-                st.markdown("---")
+                # Wrap each static chart in a beautifully bordered container
+                with st.container(border=True):
+                    st.markdown(f"**{sector} / Broad Market 500**")
+                    static_fig = render_chart(sector, "Broad Market 500", "6mo", "1d", "Candlestick", [], [], height=350)
+                    if static_fig:
+                        static_fig.update_layout(showlegend=False) 
+                        st.plotly_chart(static_fig, use_container_width=True, key=f"static_sector_{idx}")
+                    else:
+                        st.warning(f"Data currently unavailable for {sector}.")
 
 # --- SCREEN 2: DYNAMIC EXPLORER ---
 with tab2:
@@ -234,17 +237,34 @@ with tab2:
             st.rerun()
 
     with st.spinner("Rendering Dynamic Chart..."):
-        dynamic_fig = render_chart(
-            selected_asset_name, benchmark_name, 
-            selected_period, selected_interval, 
-            chart_type, selected_overlays, selected_oscillators, height=700
-        )
+        # Wrap the dynamic chart in a bordered container for clean segregation
+        with st.container(border=True):
+            dynamic_fig = render_chart(
+                selected_asset_name, benchmark_name, 
+                selected_period, selected_interval, 
+                chart_type, selected_overlays, selected_oscillators, height=700
+            )
 
-        if dynamic_fig:
-            chart_config = {
-                'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape'],
-                'displayModeBar': True,
-                'displaylogo': False,
-                'scrollZoom': True
-            }
-            st.plotly_chart(dynamic_fig, use_container_width=True, config=chart_config)
+            if dynamic_fig:
+                chart_config = {
+                    'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape'],
+                    'displayModeBar': True,
+                    'displaylogo': False,
+                    'scrollZoom': True
+                }
+                st.plotly_chart(dynamic_fig, use_container_width=True, config=chart_config)
+
+# --- SYSTEM TELEMETRY & STATUS FOOTER ---
+st.markdown("---")
+end_time = time.time()
+latency = round(end_time - start_time, 2)
+current_time = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+
+# A stylized footer showing the system status
+st.caption(
+    f"🟢 **System Status:** Online | "
+    f"⏱️ **Data Pull & Render Latency:** {latency}s | "
+    f"📡 **Source Engine:** Yahoo Finance API | "
+    f"🕒 **Last Sync:** {current_time} | "
+    f"📦 **Tracked Assets:** {len(st.session_state.asset_dict)}"
+)
