@@ -12,20 +12,19 @@ st.title("🕯️ Universal Live Ratio Dashboard (Pro)")
 st.markdown("Build relative rotation charts, apply indicators, and export your data.")
 
 # --- STATE MANAGEMENT ---
+# Updated default dictionary to use highly reliable Yahoo Finance tickers
 if 'asset_dict' not in st.session_state:
     st.session_state.asset_dict = {
-        "Nifty 500 (Benchmark)": "^CRSL500",
+        "Broad Market 500 (Benchmark)": "BSE-500.BO", # Swapped from ^CRSL500 for API stability
         "Nifty 50": "^NSEI",
         "Nifty Next 50": "^NN50",
-        "Nifty Midcap 100": "^CRSLMID",
-        "Nifty Smallcap 100": "^CNXSC",
-        "Nifty Microcap 250": "^CRSLMIC",
         "Nifty Bank": "^NSEBANK",
         "Nifty Auto": "^CNXAUTO",
         "Nifty IT": "^CNXIT",
         "Nifty Metal": "^CNXMETAL",
         "Nifty Pharma": "^CNXPHARMA",
         "Nifty Energy": "^CNXENERGY",
+        "Reliance Industries": "RELIANCE.NS",
         "Gold": "GC=F",
         "S&P 500": "^GSPC"
     }
@@ -33,8 +32,8 @@ if 'asset_dict' not in st.session_state:
 # --- SIDEBAR: ADD CUSTOM CHARTS ---
 st.sidebar.header("➕ Add New Asset")
 with st.sidebar.form("add_ticker_form"):
-    new_name = st.text_input("Asset Name (e.g., Reliance)")
-    new_ticker = st.text_input("Yahoo Ticker (e.g., RELIANCE.NS)")
+    new_name = st.text_input("Asset Name (e.g., Tata Motors)")
+    new_ticker = st.text_input("Yahoo Ticker (e.g., TATAMOTORS.NS)")
     submit_button = st.form_submit_button("Save to Dashboard")
     if submit_button and new_name and new_ticker:
         st.session_state.asset_dict[new_name] = new_ticker
@@ -116,7 +115,16 @@ with st.spinner("Fetching data and calculating indicators..."):
     sector_data = get_data(sector_ticker, selected_period, selected_interval, data_source)
     benchmark_data = get_data(benchmark_ticker, selected_period, selected_interval, data_source)
 
-    if sector_data is not None and benchmark_data is not None:
+    # --- UPGRADED ERROR HANDLING ---
+    if sector_data is None and benchmark_data is None:
+        st.error(f"⚠️ Failed to download data for both {sector_ticker} AND {benchmark_ticker}. Please check your internet connection or the tickers.")
+    elif sector_data is None:
+        st.error(f"⚠️ Failed to download data for Numerator: **{selected_asset_name} ({sector_ticker})**. Yahoo Finance may have delisted this ticker.")
+    elif benchmark_data is None:
+        st.error(f"⚠️ Failed to download data for Denominator: **{benchmark_name} ({benchmark_ticker})**. Yahoo Finance may have delisted this ticker.")
+    # -------------------------------
+    
+    elif sector_data is not None and benchmark_data is not None:
         if isinstance(sector_data.columns, pd.MultiIndex):
             sector_data.columns = sector_data.columns.get_level_values(0)
             benchmark_data.columns = benchmark_data.columns.get_level_values(0)
@@ -239,14 +247,9 @@ with st.spinner("Fetching data and calculating indicators..."):
             
             with col1:
                 st.subheader("💾 Export Data")
-                st.write("Download the calculated ratios and indicators for your selected timeframe.")
-                
-                # Convert the dataframe to a CSV string
-                # We format dates cleanly and drop NaN values from the top of the dataframe if needed
-                export_df = df.round(4) # Round to 4 decimal places for cleaner files
+                export_df = df.round(4) 
                 csv_data = export_df.to_csv(index=True).encode('utf-8')
                 
-                # Create a dynamic filename based on what the user is looking at
                 safe_asset_name = selected_asset_name.replace(" ", "_")
                 safe_bench_name = benchmark_name.replace(" ", "_")
                 filename = f"{safe_asset_name}_vs_{safe_bench_name}_{interval_selection}.csv"
@@ -261,5 +264,3 @@ with st.spinner("Fetching data and calculating indicators..."):
 
         else:
             st.error("⚠️ Data mismatch. The dates for these two assets do not align.")
-    else:
-        st.error("⚠️ Failed to download data. Double-check your custom ticker symbols.")
