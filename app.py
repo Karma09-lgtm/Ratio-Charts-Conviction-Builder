@@ -200,4 +200,51 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
 # --- DUAL SCREEN TABS ---
 tab1, tab2 = st.tabs(["🖥️ Static Sector Rotation", "🔍 Dynamic Explorer"])
 
-# --- SCREEN 1
+# --- SCREEN 1: STATIC SECTOR DASHBOARD ---
+with tab1:
+    st.subheader("Major Sector Rotation (vs Broad Market 500)")
+    st.write("Live 6-month candlestick charts tracking capital flow across major NSE sectors.")
+    
+    static_sectors = [
+        "Nifty Bank", "Nifty IT", "Nifty Auto", 
+        "Nifty Pharma", "Nifty Metal", "Nifty Energy"
+    ]
+    
+    with st.spinner("Loading live sector rotation data..."):
+        cols = st.columns(2)
+        for idx, sector in enumerate(static_sectors):
+            with cols[idx % 2]:
+                st.markdown(f"**{sector} / Broad Market 500**")
+                # Updated from "Line" to "Candlestick"
+                static_fig = render_chart(sector, "Broad Market 500", "6mo", "1d", "Candlestick", [], [], height=350)
+                if static_fig:
+                    static_fig.update_layout(showlegend=False) 
+                    st.plotly_chart(static_fig, use_container_width=True, key=f"static_sector_{idx}")
+                else:
+                    st.warning(f"Data currently unavailable for {sector}.")
+                st.markdown("---")
+
+# --- SCREEN 2: DYNAMIC EXPLORER ---
+with tab2:
+    col_title, col_btn = st.columns([4, 1])
+    with col_title:
+        st.subheader(f"Ratio: {selected_asset_name} / {benchmark_name} ({interval_selection})")
+    with col_btn:
+        if st.button("🔄 Clear Drawings"):
+            st.rerun()
+
+    with st.spinner("Rendering Dynamic Chart..."):
+        dynamic_fig = render_chart(
+            selected_asset_name, benchmark_name, 
+            selected_period, selected_interval, 
+            chart_type, selected_overlays, selected_oscillators, height=700
+        )
+
+        if dynamic_fig:
+            chart_config = {
+                'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape'],
+                'displayModeBar': True,
+                'displaylogo': False,
+                'scrollZoom': True
+            }
+            st.plotly_chart(dynamic_fig, use_container_width=True, config=chart_config)
