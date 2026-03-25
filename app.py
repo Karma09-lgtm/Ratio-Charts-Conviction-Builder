@@ -18,17 +18,11 @@ if 'asset_dict' not in st.session_state:
         "Nifty IT": "^CNXIT",
         "Nifty Pharma": "^CNXPHARMA",
         "Nifty Auto": "^CNXAUTO",
+        "Nifty Metal": "^CNXMETAL",
+        "Nifty Energy": "^CNXENERGY",
         "Gold": "GC=F",
         "S&P 500": "^GSPC"
     }
-
-# Keep track of the last searched charts for the Static Dashboard
-if 'search_history' not in st.session_state:
-    # Default initial static charts
-    st.session_state.search_history = [
-        {"num": "Nifty Bank", "den": "Nifty 50"},
-        {"num": "Nifty IT", "den": "Nifty 50"}
-    ]
 
 # --- SIDEBAR CONTROLS ---
 st.sidebar.header("➕ Add New Asset")
@@ -44,11 +38,10 @@ st.sidebar.markdown("---")
 st.sidebar.header("Chart Settings (Dynamic Screen)")
 
 selected_asset_name = st.sidebar.selectbox("1. Select Asset (Numerator)", list(st.session_state.asset_dict.keys()), index=2)
-benchmark_name = st.sidebar.selectbox("2. Select Benchmark (Denominator)", list(st.session_state.asset_dict.keys()), index=1)
+benchmark_name = st.sidebar.selectbox("2. Select Benchmark (Denominator)", list(st.session_state.asset_dict.keys()), index=0)
 
 chart_type = st.sidebar.selectbox("3. Chart Style", ("Candlestick", "Bar (OHLC)", "Hollow Candlestick", "Line"))
-# Added "1 Month" to satisfy the Monthly timeframe requirement
-timeframe = st.sidebar.selectbox("4. Lookback Period", ("1 Month", "6 Months", "1 Year", "2 Years", "5 Years", "Max"), index=2)
+timeframe = st.sidebar.selectbox("4. Lookback Period", ("1 Month", "6 Months", "1 Year", "2 Years", "5 Years", "Max"), index=1)
 interval_selection = st.sidebar.selectbox("5. Timeframe (Interval)", ("Daily", "Weekly", "Monthly"))
 
 st.sidebar.markdown("---")
@@ -61,12 +54,6 @@ interval_map = {"Daily": "1d", "Weekly": "1wk", "Monthly": "1mo"}
 selected_period = period_map[timeframe]
 selected_interval = interval_map[interval_selection]
 
-# Update history when a new combination is selected
-current_search = {"num": selected_asset_name, "den": benchmark_name}
-if current_search not in st.session_state.search_history:
-    st.session_state.search_history.insert(0, current_search)
-    # Keep history capped at 4 to prevent static dashboard lag
-    st.session_state.search_history = st.session_state.search_history[:4]
 
 # --- MATH HELPERS ---
 def calculate_rsi(series, period=14):
@@ -94,7 +81,6 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
     den_data = fetch_yahoo_data(den_ticker, period_str, interval_str)
 
     if num_data is None or den_data is None:
-        st.error(f"⚠️ Failed to fetch data for {num_name} or {den_name}.")
         return None
 
     if isinstance(num_data.columns, pd.MultiIndex):
@@ -106,7 +92,7 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
 
     if df.empty: return None
 
-    # EXACT RATIO CALCULATION (Removed Base-100 Normalization)
+    # EXACT RATIO CALCULATION
     df['Ratio_Open'] = df['Open_num'] / df['Open_den']
     df['Ratio_High'] = df['High_num'] / df['High_den']
     df['Ratio_Low'] = df['Low_num'] / df['Low_den']
@@ -141,17 +127,35 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
 
     # TradingView Colors
     TV_GREEN, TV_RED, TV_BLUE, TV_GRID = '#089981', '#F23645', '#2962FF', '#E0E3EB'
+    ind_colors = {"21 EMA": "#FF9800", "50 SMA": TV_BLUE, "200 EMA": "#F44336", "AVWAP": "#1E1E1E"}
 
+    # Main Chart Trace
     if c_type == "Line":
         fig.add_trace(go.Scatter(x=df.index, y=df['Ratio_Close'], mode='lines', name='Ratio', line=dict(color=TV_BLUE, width=2)), row=1, col=1)
     elif c_type == "Bar (OHLC)":
         fig.add_trace(go.Ohlc(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], name='Ratio', increasing_line_color=TV_GREEN, decreasing_line_color=TV_RED), row=1, col=1)
-    else:
-        fig.add_trace(go.Candlestick(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], name='Ratio', increasing_line_color=TV_GREEN, increasing_fillcolor=TV_GREEN if c_type == "Candlestick" else 'rgba(0,0,0,0)', decreasing_line_color=TV_RED, decreasing_fillcolor=TV_RED if c_type == "Candlestick" else 'rgba(0,0,0,0)'), row=1, col=1)
+    elif c_type == "Hollow Candlestick":
+        fig.add_trace(go.Candlestick(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], name='Ratio', increasing_line_color=TV_GREEN, increasing_fillcolor='rgba(0,0,0,0)', decreasing_line_color=TV_RED, decreasing_fillcolor='rgba(0,0,0,0)'), row=1, col=1)
+    else: # Candlestick (Default)
+        fig.add_trace(go.Candlestick(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], name='Ratio', increasing_line_color=TV_GREEN, increasing_fillcolor=TV_GREEN, decreasing_line_color=TV_RED, decreasing_fillcolor=TV_RED), row=1, col=1)
 
+    # Overlays + Label Annotations
     for ind in overlays:
         if ind in df.columns:
-            fig.add_trace(go.Scatter(x=df.index, y=df[ind], mode='lines', name=ind, line=dict(width=1.5)), row=1, col=1)
+            valid_data = df[ind].dropna()
+            if not valid_data.empty:
+                color = ind_colors.get(ind, '#000000')
+                fig.add_trace(go.Scatter(x=df.index, y=df[ind], mode='lines', name=ind, line=dict(color=color, width=1.5)), row=1, col=1)
+                
+                last_idx = valid_data.index[-1]
+                last_val = valid_data.iloc[-1]
+                fig.add_annotation(
+                    x=last_idx, y=last_val, text=f"{ind}",
+                    font=dict(color="white", size=10),
+                    bgcolor=color, bordercolor=color,
+                    showarrow=True, arrowcolor=color, arrowhead=0,
+                    ax=35, ay=0, row=1, col=1
+                )
 
     # Oscillators
     current_row = 2
@@ -161,6 +165,7 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
         fig.add_hline(y=30, line_dash="dash", line_color=TV_GRID, row=current_row, col=1)
         fig.update_yaxes(title_text="RSI", range=[0, 100], row=current_row, col=1)
         current_row += 1
+        
     if "MACD (12, 26, 9)" in oscillators:
         fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Line'], mode='lines', name='MACD', line=dict(color=TV_BLUE)), row=current_row, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Signal'], mode='lines', name='Sig', line=dict(color='#FF9800')), row=current_row, col=1)
@@ -169,68 +174,30 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
 
     # DYNAMIC X-AXIS FORMATTING
     if period_str in ["1mo", "6mo"]:
-        # Display exact days on shorter timeframes
         x_format = "%d %b %Y"
         d_tick = None
     else:
-        # Display months/years on longer timeframes
         x_format = "%b %Y"
         d_tick = "M1" if period_str == "1y" else "M3"
 
+    # LAYOUT FORMATTING
     fig.update_layout(
         template="plotly_white", plot_bgcolor='white', paper_bgcolor='white',
-        xaxis_rangeslider_visible=False, height=height, margin=dict(l=10, r=50, t=30, b=20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        xaxis_rangeslider_visible=False, height=height, 
+        margin=dict(l=10, r=80, t=30, b=20), 
+        legend=dict(
+            orientation="h", yanchor="top", y=0.99, xanchor="left", x=0.01,
+            bgcolor="rgba(255, 255, 255, 0.7)", bordercolor=TV_GRID, borderwidth=1
+        ),
         hovermode="x unified", dragmode="pan"
     )
     
     fig.update_xaxes(showgrid=True, gridcolor=TV_GRID, tickformat=x_format, dtick=d_tick)
-    # EXACT RATIO FORMATTING ON Y-AXIS
-    fig.update_yaxes(showgrid=True, gridcolor=TV_GRID, side="right", tickformat=".4f") # 4 decimals for exact ratio precision
+    fig.update_yaxes(showgrid=True, gridcolor=TV_GRID, side="right", tickformat=".4f")
 
     return fig
 
 # --- DUAL SCREEN TABS ---
-tab1, tab2 = st.tabs(["🖥️ Static Dashboard (Recent)", "🔍 Dynamic Explorer"])
+tab1, tab2 = st.tabs(["🖥️ Static Sector Rotation", "🔍 Dynamic Explorer"])
 
-# --- SCREEN 1: STATIC DASHBOARD ---
-with tab1:
-    st.subheader("Recent Ratio Charts")
-    st.write("A quick overview of your most recently analyzed pairs.")
-    
-    cols = st.columns(2)
-    for idx, pair in enumerate(st.session_state.search_history):
-        col = cols[idx % 2]
-        with col:
-            st.markdown(f"**{pair['num']} / {pair['den']}**")
-            # Render a lightweight version for the static dashboard
-            static_fig = render_chart(pair['num'], pair['den'], "6mo", "1d", "Line", [], [], height=350)
-            if static_fig:
-                st.plotly_chart(static_fig, use_container_width=True, key=f"static_{idx}")
-            st.markdown("---")
-
-# --- SCREEN 2: DYNAMIC EXPLORER ---
-with tab2:
-    col_title, col_btn = st.columns([4, 1])
-    with col_title:
-        st.subheader(f"Ratio: {selected_asset_name} / {benchmark_name} ({interval_selection})")
-    with col_btn:
-        # "Undo" / Clear Drawings Workaround
-        if st.button("🔄 Clear Drawings"):
-            st.rerun()
-
-    with st.spinner("Rendering Dynamic Chart..."):
-        dynamic_fig = render_chart(
-            selected_asset_name, benchmark_name, 
-            selected_period, selected_interval, 
-            chart_type, selected_overlays, selected_oscillators, height=700
-        )
-
-        if dynamic_fig:
-            chart_config = {
-                'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape'],
-                'displayModeBar': True,
-                'displaylogo': False,
-                'scrollZoom': True
-            }
-            st.plotly_chart(dynamic_fig, use_container_width=True, config=chart_config)
+# --- SCREEN 1
