@@ -118,12 +118,10 @@ with st.sidebar.form("add_ticker_form"):
 st.sidebar.markdown("---")
 st.sidebar.header("Chart Settings (Dynamic Screen)")
 
-# Append "None" option to the front of the list
 asset_options = ["None"] + list(st.session_state.asset_dict.keys())
 
-# Adjust indices +1 because "None" shifted everything
-selected_asset_name = st.sidebar.selectbox("1. Numerator", asset_options, index=2) # Default Nifty 50
-benchmark_name = st.sidebar.selectbox("2. Denominator", asset_options, index=1) # Default Broad Market
+selected_asset_name = st.sidebar.selectbox("1. Numerator", asset_options, index=2) 
+benchmark_name = st.sidebar.selectbox("2. Denominator", asset_options, index=1) 
 
 chart_type = st.sidebar.selectbox("3. Style", ("Candlestick", "Bar (OHLC)", "Hollow Candlestick", "Line"))
 timeframe = st.sidebar.selectbox("4. Lookback", ("1 Month", "6 Months", "1 Year", "2 Years", "5 Years", "Max"), index=1)
@@ -159,6 +157,14 @@ def fetch_yahoo_data(ticker, period, interval):
     try:
         data = yf.download(ticker, period=period, interval=interval, progress=False)
         if data.empty: return None
+        
+        # ⚠️ CRITICAL BUG FIX: Flatten MultiIndex columns before doing anything else
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
+            
+        # Ensure we don't have duplicate columns from the flattening
+        data = data.loc[:, ~data.columns.duplicated()]
+
         if 'Volume' in data.columns: return data[['Open', 'High', 'Low', 'Close', 'Volume']]
         return data[['Open', 'High', 'Low', 'Close']]
     except: return None
@@ -187,10 +193,10 @@ def fetch_market_news():
             seen.add(item["title"])
     return unique_news[:15]
 
-# --- CHART RENDERING ENGINE (NOW SUPPORTS "NONE") ---
+# --- CHART RENDERING ENGINE ---
 def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, height=650):
     if num_name == "None" and den_name == "None":
-        return None # No chart to render
+        return None
 
     num_data = None
     if num_name != "None":
@@ -206,14 +212,8 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
     if den_data is None and num_name == "None": return None
     if num_data is None and den_data is None: return None
 
-    # Flatten MultiIndex if exists
-    if num_data is not None and isinstance(num_data.columns, pd.MultiIndex):
-        num_data.columns = num_data.columns.get_level_values(0)
-    if den_data is not None and isinstance(den_data.columns, pd.MultiIndex):
-        den_data.columns = den_data.columns.get_level_values(0)
+    # MultiIndex flattening is now handled natively in fetch_yahoo_data.
 
-    # DUMMY DATA INJECTION: If an asset is "None", we replace its prices with '1' 
-    # This mathematically ensures the resulting Ratio is just the raw price of the available asset.
     base_df = num_data if num_data is not None else den_data
     
     if num_name == "None" or num_data is None:
@@ -228,14 +228,12 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
     df.dropna(subset=['Close_num', 'Close_den'], inplace=True)
     if df.empty: return None
 
-    # EXACT RATIO MATH (If Denominator is None, this just equals the Numerator Price)
     df['Ratio_Open'] = df['Open_num'] / df['Open_den']
     df['Ratio_High'] = df['High_num'] / df['High_den']
     df['Ratio_Low'] = df['Low_num'] / df['Low_den']
     df['Ratio_Close'] = df['Close_num'] / df['Close_den']
     c = df['Ratio_Close']
     
-    # ALL REQUESTED OVERLAYS
     if "50 SMA" in overlays: df['50 SMA'] = c.rolling(window=50).mean()
     if "100 SMA" in overlays: df['100 SMA'] = c.rolling(window=100).mean()
     if "21 EMA" in overlays: df['21 EMA'] = c.ewm(span=21, adjust=False).mean()
@@ -263,7 +261,6 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
     fig = make_subplots(rows=num_rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
 
     TV_GREEN, TV_RED, TV_BLUE, TV_GRID = '#089981', '#F23645', '#2962FF', '#E0E3EB'
-    # Expanded Color Mapping for new MAs
     ind_colors = {
         "21 EMA": "#FF9800", "50 SMA": TV_BLUE, "63 EMA": "#E91E63", 
         "100 SMA": "#9C27B0", "200 EMA": "#F44336", "30 WMA": "#4CAF50", 
@@ -327,7 +324,6 @@ tab1, tab2 = st.tabs(["🖥️ Macro Overview (Grid)", "🔍 Dynamic Explorer"])
 # --- SCREEN 1: THE MACRO GRID ---
 with tab1:
     
-    # 🌟 NEW: LIVE GLOBAL MARKET TOP DASHBOARD (Click to Expand)
     st.subheader("🌐 Live Global Markets")
     top_indices = ["S&P 500 (US)", "Nasdaq 100", "Nifty 50", "Gold (Spot)", "Bitcoin (USD)", "Crude Oil (WTI)"]
     cols_top = st.columns(len(top_indices))
@@ -335,17 +331,20 @@ with tab1:
     for i, idx_name in enumerate(top_indices):
         with cols_top[i]:
             ticker = st.session_state.asset_dict[idx_name]
-            # Fetch a very small chunk of data for speed just to calculate daily % change
             data = fetch_yahoo_data(ticker, "5d", "1d")
+            
             if data is not None and not data.empty and len(data) >= 2:
-                last_close = data['Close'].iloc[-1]
-                prev_close = data['Close'].iloc[-2]
-                pct_change = ((last_close - prev_close) / prev_close) * 100
-                st.metric(label=idx_name, value=f"{last_close:,.2f}", delta=f"{pct_change:.2f}%")
+                try:
+                    # Bulletproof math conversion to prevent TypeErrors
+                    last_close = float(data['Close'].iloc[-1])
+                    prev_close = float(data['Close'].iloc[-2])
+                    pct_change = ((last_close - prev_close) / prev_close) * 100
+                    st.metric(label=idx_name, value=f"{last_close:,.2f}", delta=f"{pct_change:.2f}%")
+                except Exception:
+                    st.metric(label=idx_name, value="Data Error")
             else:
                 st.metric(label=idx_name, value="N/A")
             
-            # Click-to-Expand Chart (Using Denominator = "None" for absolute price)
             with st.expander("📊 Chart"):
                 top_fig = render_chart(idx_name, "None", "1mo", "1d", "Line", [], [], height=200)
                 if top_fig: 
@@ -354,7 +353,6 @@ with tab1:
                     
     st.markdown("---")
     
-    # --- SECTOR GRID & NEWS ---
     col_main, col_news = st.columns([3, 1]) 
     
     with col_main:
@@ -408,7 +406,6 @@ with tab2:
     with col_dyn_main:
         c1, c2 = st.columns([4, 1])
         
-        # Dynamic Header handling "None" Logic
         if benchmark_name == "None" and selected_asset_name != "None":
             c1.subheader(f"Raw Price: {selected_asset_name}")
         elif selected_asset_name == "None" and benchmark_name != "None":
