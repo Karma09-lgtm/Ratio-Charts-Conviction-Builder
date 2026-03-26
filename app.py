@@ -164,9 +164,8 @@ def fetch_market_news():
     for url in feed_urls:
         try:
             parsed = feedparser.parse(url)
-            for entry in parsed.entries[:10]: # Limit for speed
+            for entry in parsed.entries[:10]:
                 if entry.title not in seen:
-                    # ⚠️ BUG FIX: Safely extract 'published' or fallback to 'pubDate' or 'Recent'
                     pub_date = entry.get("published", entry.get("pubDate", "Recent"))
                     news_items.append({"title": entry.title, "link": entry.link, "published": pub_date})
                     seen.add(entry.title)
@@ -356,7 +355,6 @@ def render_news_feed(height):
         else:
             for item in news:
                 st.markdown(f"**[{item['title']}]({item['link']})**")
-                # ⚠️ BUG FIX: Safely format the date string
                 pub_str = item.get('published', 'Recent').replace('+0000', '').strip()
                 st.caption(f"🕒 {pub_str}")
                 st.markdown("---")
@@ -388,7 +386,6 @@ with tab1:
                 st.metric(label=idx_name, value="N/A")
             
             with st.expander("📊 Chart"):
-                # Now passing show_vol=True & Candlestick for the authentic TV look
                 top_fig = render_chart(idx_name, "None", "1mo", "1d", "Candlestick", [], [], show_vol=True, height=250)
                 if top_fig: 
                     top_fig.update_layout(margin=dict(l=10, r=40, t=10, b=10))
@@ -475,7 +472,8 @@ with tab2:
         if c2.button("🔄 Clear Drawings"): st.rerun()
 
         with st.spinner("Rendering Chart..."), st.container(border=True):
-            fig = render_chart(selected_asset_name, benchmark_name, selected_period, selected_interval, chart_type, selected_overlays, selected_oscillators, show_vol=show_volume, height=700)
+            # ⚠️ CRITICAL FIX: Using `timeframe` and `interval_selection` directly here
+            fig = render_chart(selected_asset_name, benchmark_name, timeframe, interval_selection, chart_type, selected_overlays, selected_oscillators, show_vol=show_volume, height=700)
             if fig:
                 st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
             elif selected_asset_name == "None" and benchmark_name == "None":
