@@ -113,9 +113,10 @@ chart_type = st.sidebar.selectbox("Style", ("Candlestick", "Bar (OHLC)", "Line")
 
 st.sidebar.markdown("---")
 st.sidebar.header("📈 Indicators & Features")
-show_volume = st.sidebar.checkbox("Show Volume Bar", value=True)
 selected_overlays = st.sidebar.multiselect("Overlays", ["21 EMA", "50 SMA", "200 EMA", "AVWAP"], default=["50 SMA"])
-selected_oscillators = st.sidebar.multiselect("Oscillators", ["RSI (14)", "MACD (12, 26, 9)"])
+
+# INTEGRATED VOLUME INTO OSCILLATORS
+selected_oscillators = st.sidebar.multiselect("Oscillators", ["Volume", "RSI (14)", "MACD (12, 26, 9)"], default=["Volume"])
 
 # --- HELPERS ---
 def calculate_rsi(series, period=14):
@@ -172,11 +173,9 @@ def fetch_market_news():
         try:
             parsed = feedparser.parse(url)
             for entry in parsed.entries[:25]:
-                # 24-Hour News Filter Logic
                 if hasattr(entry, 'published_parsed') and entry.published_parsed:
                     pub_time = time.mktime(entry.published_parsed)
-                    if current_time - pub_time > 86400: # Skip if older than 24 hours (86,400 seconds)
-                        continue 
+                    if current_time - pub_time > 86400: continue 
                 
                 if entry.title not in seen and any(kw in entry.title.lower() for kw in target_keywords):
                     pub_date = entry.get("published", entry.get("pubDate", "Recent"))
@@ -193,7 +192,7 @@ TV_CONFIG = {
     'scrollZoom': True
 }
 
-def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol=True, height=650):
+def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, height=650):
     if num_name == "None" and den_name == "None": return None
     num_data = fetch_yahoo_data(st.session_state.asset_dict.get(num_name), period_str, interval_str) if num_name != "None" else None
     den_data = fetch_yahoo_data(st.session_state.asset_dict.get(den_name), period_str, interval_str) if den_name != "None" else None
@@ -230,14 +229,15 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
         df['MACD_Signal'] = df['MACD_Line'].ewm(span=9).mean()
         df['MACD_Hist'] = df['MACD_Line'] - df['MACD_Signal']
 
-    # Structure Subplots dynamically
-    has_volume = 'Volume_num' in df.columns and show_vol
-    num_rows = 1 + (1 if has_volume else 0) + len(oscillators)
+    # --- DYNAMIC SUBPLOT ARCHITECTURE ---
+    has_volume = "Volume" in oscillators and 'Volume_num' in df.columns
+    active_osc = [o for o in oscillators if o != "Volume"]
     
-    row_heights = [0.6]
+    num_rows = 1 + (1 if has_volume else 0) + len(active_osc)
+    row_heights = [0.65]
     if has_volume: row_heights.append(0.15)
-    row_heights.extend([0.15] * len(oscillators))
-    row_heights = [h / sum(row_heights) for h in row_heights] # Normalize
+    row_heights.extend([0.15] * len(active_osc))
+    row_heights = [h / sum(row_heights) for h in row_heights] 
     
     fig = make_subplots(rows=num_rows, cols=1, shared_xaxes=True, vertical_spacing=0.02, row_heights=row_heights)
 
@@ -255,39 +255,37 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
 
     curr_row = 2
     
-    # 2. Volume Bar Chart (Green/Red based on candle close)
+    # 2. Volume Bar Chart with Smart Number Formatting (e.g., 1M, 1B)
     if has_volume:
         vol_colors = ['rgba(8, 153, 129, 0.5)' if row['Ratio_Close'] >= row['Ratio_Open'] else 'rgba(242, 54, 69, 0.5)' for _, row in df.iterrows()]
         fig.add_trace(go.Bar(x=df.index, y=df['Volume_num'], marker_color=vol_colors, name="Volume"), row=curr_row, col=1)
-        fig.update_yaxes(title_text="Vol", row=curr_row, col=1, showgrid=False)
+        fig.update_yaxes(title_text="Vol", row=curr_row, col=1, showgrid=False, tickformat=".2s")
         curr_row += 1
 
     # 3. Oscillators
-    if "RSI (14)" in oscillators:
+    if "RSI (14)" in active_osc:
         fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#7E57C2', width=1)), row=curr_row, col=1)
         fig.add_hline(y=70, line_dash="dot", line_color='#787b86', row=curr_row, col=1)
         fig.add_hline(y=30, line_dash="dot", line_color='#787b86', row=curr_row, col=1)
         fig.update_yaxes(range=[0, 100], title_text="RSI", row=curr_row, col=1); curr_row += 1
         
-    if "MACD (12, 26, 9)" in oscillators:
+    if "MACD (12, 26, 9)" in active_osc:
         fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Line'], line=dict(color=TV_BLUE, width=1)), row=curr_row, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Signal'], line=dict(color='#FF9800', width=1)), row=curr_row, col=1)
         hc = [TV_GREEN if v >= 0 else TV_RED for v in df['MACD_Hist']]
         fig.add_trace(go.Bar(x=df.index, y=df['MACD_Hist'], marker_color=hc), row=curr_row, col=1)
         fig.update_yaxes(title_text="MACD", row=curr_row, col=1)
 
-    # Layout Formatting
+    # CLEAN X-AXIS FIX: Allow Plotly to dynamically render dates without text overlap
     fig.update_layout(
         template="plotly_white", plot_bgcolor=BG, paper_bgcolor=BG,
         xaxis_rangeslider_visible=False, height=height, margin=dict(l=10, r=45, t=10, b=10), showlegend=False,
         hovermode="x unified", dragmode="pan", font=dict(color="#131722", size=11)
     )
     
-    x_format, d_tick = ("%d %b %Y", None) if period_str in ["1mo", "3mo", "6mo"] else ("%b %Y", "M1" if period_str == "1y" else "M3")
-    
     # Enable TradingView Style Crosshairs (Spike Lines) on all axes
     fig.update_xaxes(
-        showgrid=True, gridcolor=TV_GRID, tickformat=x_format, dtick=d_tick,
+        showgrid=True, gridcolor=TV_GRID,
         showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash"
     )
     fig.update_yaxes(
@@ -303,7 +301,8 @@ def expand_chart_modal(num_name, den_name):
     st.markdown(f"### {title}")
     
     with st.spinner("Loading High-Res Interactive Engine..."):
-        fig = render_chart(num_name, den_name, "1y", "1d", "Candlestick", ["50 SMA", "200 EMA"], ["RSI (14)"], show_vol=True, height=650)
+        # Passes Volume natively as part of oscillators
+        fig = render_chart(num_name, den_name, "1y", "1d", "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], height=650)
         if fig:
             st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
 
@@ -398,7 +397,7 @@ with tab1:
                 st.metric(label=idx_name, value="N/A")
             
             with st.expander("📊 Chart"):
-                top_fig = render_chart(idx_name, "None", "1mo", "1d", "Candlestick", [], [], show_vol=True, height=250)
+                top_fig = render_chart(idx_name, "None", "1mo", "1d", "Candlestick", [], ["Volume"], height=250)
                 if top_fig: 
                     top_fig.update_layout(margin=dict(l=10, r=40, t=10, b=10))
                     st.plotly_chart(top_fig, use_container_width=True, key=f"top_{i}", config=TV_CONFIG)
@@ -422,7 +421,7 @@ with tab1:
                         if head2.button("🗖", key=f"btn_nse_{idx}", help="Open Full Interactive Chart"): 
                             expand_chart_modal(sec, "Broad Market 500 (IND)")
                             
-                        fig = render_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], [], show_vol=True, height=300)
+                        fig = render_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], height=300)
                         if fig: st.plotly_chart(fig, use_container_width=True, key=f"nse_c_{idx}", config=TV_CONFIG)
                         
         with macro_tabs[1]:
@@ -437,7 +436,7 @@ with tab1:
                         if head2.button("🗖", key=f"btn_us_{idx}", help="Open Full Interactive Chart"): 
                             expand_chart_modal(sec, "S&P 500")
                             
-                        fig = render_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], [], show_vol=True, height=300)
+                        fig = render_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], height=300)
                         if fig: st.plotly_chart(fig, use_container_width=True, key=f"us_c_{idx}", config=TV_CONFIG)
 
         with macro_tabs[2]:
@@ -457,7 +456,7 @@ with tab1:
                         if head2.button("🗖", key=f"btn_glb_{idx}", help="Open Full Interactive Chart"): 
                             expand_chart_modal(num, den)
                             
-                        fig = render_chart(num, den, "6mo", "1d", "Candlestick", [], [], show_vol=True, height=320)
+                        fig = render_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], height=320)
                         if fig: st.plotly_chart(fig, use_container_width=True, key=f"glb_c_{idx}", config=TV_CONFIG)
 
     with col_news:
@@ -484,7 +483,7 @@ with tab2:
         if c2.button("🔄 Clear Drawings"): st.rerun()
 
         with st.spinner("Rendering Chart..."), st.container(border=True):
-            fig = render_chart(selected_asset_name, benchmark_name, timeframe, interval_selection, chart_type, selected_overlays, selected_oscillators, show_vol=show_volume, height=700)
+            fig = render_chart(selected_asset_name, benchmark_name, timeframe, interval_selection, chart_type, selected_overlays, selected_oscillators, height=700)
             if fig:
                 st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
             elif selected_asset_name == "None" and benchmark_name == "None":
