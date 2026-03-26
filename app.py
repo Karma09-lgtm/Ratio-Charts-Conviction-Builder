@@ -64,9 +64,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- BULLETPROOF STATE MANAGEMENT (ASSETS & WATCHLISTS) ---
+st.title("🌍 Ratio Charts Conviction Builder")
+
+# --- STATE MANAGEMENT (ASSETS & WATCHLISTS) ---
 if 'asset_dict' not in st.session_state:
-    # ⚠️ FIXED: Ensured all names exactly match the grid lists to prevent KeyErrors
     st.session_state.asset_dict = {
         "S&P 500": "^GSPC", "Nasdaq 100": "^NDX", "Dow Jones": "^DJI", "Russell 2000": "^RUT", "VIX": "^VIX",
         "Broad Market 500 (IND)": "BSE-500.BO", "Nifty 50": "^NSEI", 
@@ -85,7 +86,7 @@ if 'active_wl' not in st.session_state:
     st.session_state.active_wl = "⭐ My Favorites"
 
 # --- SIDEBAR CONTROLS ---
-st.sidebar.title("⚙️ Terminal Settings")
+st.sidebar.title("⚙️ Builder Settings")
 
 with st.sidebar.expander("📝 Watchlist Manager", expanded=False):
     st.caption("Create or Delete Watchlists")
@@ -164,16 +165,25 @@ def fetch_bulk_watchlist(tickers_dict):
 def fetch_market_news():
     feed_urls = ["https://feeds.a.dj.com/rss/RSSMarketsMain.xml", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664"]
     news_items, seen = [], set()
+    current_time = time.time()
+    target_keywords = ['rate', 'yield', 'treasury', 'inflation', 'cpi', 'fed', 'rbi', 'bank', 'earnings', 'revenue', 'acquire', 'merger', 'war', 'tariff', 'geopolitic']
+    
     for url in feed_urls:
         try:
             parsed = feedparser.parse(url)
-            for entry in parsed.entries[:10]: # Limit for speed
-                if entry.title not in seen:
+            for entry in parsed.entries[:25]:
+                # 24-Hour News Filter Logic
+                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    pub_time = time.mktime(entry.published_parsed)
+                    if current_time - pub_time > 86400: # Skip if older than 24 hours (86,400 seconds)
+                        continue 
+                
+                if entry.title not in seen and any(kw in entry.title.lower() for kw in target_keywords):
                     pub_date = entry.get("published", entry.get("pubDate", "Recent"))
                     news_items.append({"title": entry.title, "link": entry.link, "published": pub_date})
                     seen.add(entry.title)
         except: continue
-    return news_items[:12]
+    return news_items[:15]
 
 # --- TRADINGVIEW CHART ENGINE ---
 TV_CONFIG = {
@@ -220,7 +230,7 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
         df['MACD_Signal'] = df['MACD_Line'].ewm(span=9).mean()
         df['MACD_Hist'] = df['MACD_Line'] - df['MACD_Signal']
 
-    # Structure Subplots dynamically based on toggles
+    # Structure Subplots dynamically
     has_volume = 'Volume_num' in df.columns and show_vol
     num_rows = 1 + (1 if has_volume else 0) + len(oscillators)
     
@@ -293,7 +303,6 @@ def expand_chart_modal(num_name, den_name):
     st.markdown(f"### {title}")
     
     with st.spinner("Loading High-Res Interactive Engine..."):
-        # Passes Volume, Candles, and Standard TV MAs to the expanded view automatically
         fig = render_chart(num_name, den_name, "1y", "1d", "Candlestick", ["50 SMA", "200 EMA"], ["RSI (14)"], show_vol=True, height=650)
         if fig:
             st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
@@ -351,10 +360,10 @@ def render_watchlist(key_prefix):
             st.caption("No data or empty watchlist.")
 
 def render_news_feed(height):
-    st.subheader("📰 Global Macro News")
+    st.subheader("📰 Recent Market News")
     with st.container(border=True, height=height):
         news = fetch_market_news()
-        if not news: st.info("No relevant news fetched.")
+        if not news: st.info("No updates in the last 24 hours matching criteria.")
         else:
             for item in news:
                 st.markdown(f"**[{item['title']}]({item['link']})**")
@@ -369,7 +378,6 @@ tab1, tab2 = st.tabs(["🖥️ Macro Overview (Grid)", "🔍 Dynamic Explorer"])
 # --- SCREEN 1: THE MACRO GRID ---
 with tab1:
     st.subheader("🌐 Live Global Markets")
-    # ⚠️ FIXED: Perfect Match with st.session_state.asset_dict
     top_indices = ["S&P 500", "Nasdaq 100", "Nifty 50", "Gold (Spot)", "Bitcoin", "Crude Oil"]
     cols_top = st.columns(len(top_indices))
     
@@ -404,7 +412,6 @@ with tab1:
         
         with macro_tabs[0]:
             st.caption("Benchmark: Broad Market 500 (IND)")
-            # ⚠️ FIXED: Perfect Match with st.session_state.asset_dict
             nse_list = ["Nifty Bank", "Nifty IT", "Nifty Auto", "Nifty Pharma", "Nifty Metal", "Nifty Energy", "Nifty FMCG", "Nifty Realty", "Nifty PSU Bank"]
             cols = st.columns(3)
             with st.spinner("Fetching NSE Data..."):
@@ -420,7 +427,6 @@ with tab1:
                         
         with macro_tabs[1]:
             st.caption("Benchmark: S&P 500")
-            # ⚠️ FIXED: Perfect Match with st.session_state.asset_dict
             us_list = ["Nasdaq 100", "Russell 2000", "US Tech ETF", "US Fin ETF", "US Healthcare ETF", "US Energy ETF"]
             cols = st.columns(3)
             with st.spinner("Fetching US Data..."):
@@ -436,7 +442,6 @@ with tab1:
 
         with macro_tabs[2]:
             st.caption("Ratios measuring Risk-On vs Risk-Off behaviors")
-            # ⚠️ FIXED: Perfect Match with st.session_state.asset_dict
             macro_pairs = [
                 ("Gold (Spot)", "S&P 500", "Safe Haven vs Equity"),
                 ("US 20+ Yr Treasury", "S&P 500", "Bonds vs Equity"),
