@@ -166,7 +166,9 @@ def fetch_market_news():
             parsed = feedparser.parse(url)
             for entry in parsed.entries[:10]: # Limit for speed
                 if entry.title not in seen:
-                    news_items.append({"title": entry.title, "link": entry.link})
+                    # ⚠️ BUG FIX: Safely extract 'published' or fallback to 'pubDate' or 'Recent'
+                    pub_date = entry.get("published", entry.get("pubDate", "Recent"))
+                    news_items.append({"title": entry.title, "link": entry.link, "published": pub_date})
                     seen.add(entry.title)
         except: continue
     return news_items[:12]
@@ -354,7 +356,9 @@ def render_news_feed(height):
         else:
             for item in news:
                 st.markdown(f"**[{item['title']}]({item['link']})**")
-                st.caption(f"🕒 {item['published'].replace('+0000', '').strip()}")
+                # ⚠️ BUG FIX: Safely format the date string
+                pub_str = item.get('published', 'Recent').replace('+0000', '').strip()
+                st.caption(f"🕒 {pub_str}")
                 st.markdown("---")
 
 
