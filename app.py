@@ -8,10 +8,10 @@ import time
 import feedparser
 
 # --- PAGE CONFIGURATION & TIMER START ---
-st.set_page_config(page_title="Global Macro Ratio Dashboard", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Ratio Charts Conviction Builder", layout="wide", initial_sidebar_state="expanded")
 start_time = time.time()
 
-st.title("🌍 Global Macro Ratio Dashboard (Pro)")
+st.title("🌍 Ratio Charts Conviction Builder (Pro)")
 
 # --- MASSIVELY EXPANDED STATE MANAGEMENT ---
 if 'asset_dict' not in st.session_state:
