@@ -8,65 +8,81 @@ import time
 import feedparser
 
 # --- PAGE CONFIGURATION & TIMER START ---
-st.set_page_config(page_title="Universal Live Ratio Dashboard", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Global Macro Ratio Dashboard", layout="wide", initial_sidebar_state="expanded")
 start_time = time.time()
 
-st.title("📊 Universal Live Ratio Dashboard (Pro)")
+st.title("🌍 Global Macro Ratio Dashboard (Pro)")
 
-# --- STATE MANAGEMENT ---
+# --- EXTENDED STATE MANAGEMENT (NSE, NYSE, ETFs) ---
 if 'asset_dict' not in st.session_state:
     st.session_state.asset_dict = {
-        "Broad Market 500": "BSE-500.BO", 
+        # Benchmarks
+        "Broad Market 500 (IND)": "BSE-500.BO", 
+        "S&P 500 (US)": "^GSPC",
+        "Nasdaq 100": "^NDX",
+        
+        # NSE Sectors
         "Nifty 50": "^NSEI",
         "Nifty Auto": "^CNXAUTO",
         "Nifty Bank": "^NSEBANK",
         "Nifty Commodities": "^CNXCMDT",
-        "Nifty Consumption": "^CNXCONSUM",
         "Nifty Energy": "^CNXENERGY",
-        "Nifty Financial Services": "^CNXFIN",
         "Nifty FMCG": "^CNXFMCG",
-        "Nifty Infrastructure": "^CNXINFRA",
         "Nifty IT": "^CNXIT",
-        "Nifty Media": "^CNXMEDIA",
         "Nifty Metal": "^CNXMETAL",
         "Nifty Pharma": "^CNXPHARMA",
-        "Nifty PSE": "^CNXPSE",
         "Nifty PSU Bank": "^CNXPSUBANK",
         "Nifty Realty": "^CNXREALTY",
-        "Gold": "GC=F",
-        "S&P 500": "^GSPC"
+        
+        # US Markets & Sectors (NYSE/Nasdaq ETFs)
+        "Dow Jones Ind. Avg": "^DJI",
+        "Russell 2000 (Small Cap)": "^RUT",
+        "US Tech (XLK)": "XLK",
+        "US Financials (XLF)": "XLF",
+        "US Healthcare (XLV)": "XLV",
+        "US Energy (XLE)": "XLE",
+        "US Consumer Discretionary (XLY)": "XLY",
+        "US Industrials (XLI)": "XLI",
+        
+        # Global Asset Classes (ETFs & Spot)
+        "Gold (Spot)": "GC=F",
+        "Silver (Spot)": "SI=F",
+        "Crude Oil (WTI)": "CL=F",
+        "US 20+ Year Treasuries (TLT)": "TLT",
+        "US 7-10 Year Treasuries (IEF)": "IEF",
+        "Real Estate (VNQ)": "VNQ",
+        "Emerging Markets (EEM)": "EEM",
+        "Bitcoin (USD)": "BTC-USD"
     }
 
 # --- SIDEBAR CONTROLS ---
-st.sidebar.header("➕ Add New Asset")
+st.sidebar.header("➕ Add Custom Ticker")
 with st.sidebar.form("add_ticker_form"):
-    new_name = st.text_input("Asset Name (e.g., Tata Motors)")
-    new_ticker = st.text_input("Yahoo Ticker (e.g., TATAMOTORS.NS)")
-    submit_button = st.form_submit_button("Save to Dashboard")
-    if submit_button and new_name and new_ticker:
+    new_name = st.text_input("Name (e.g., Reliance)")
+    new_ticker = st.text_input("Yahoo Ticker (e.g., RELIANCE.NS)")
+    if st.form_submit_button("Save to Dashboard") and new_name and new_ticker:
         st.session_state.asset_dict[new_name] = new_ticker
         st.sidebar.success(f"✅ {new_name} added!")
 
 st.sidebar.markdown("---")
 st.sidebar.header("Chart Settings (Dynamic Screen)")
 
-selected_asset_name = st.sidebar.selectbox("1. Select Asset (Numerator)", list(st.session_state.asset_dict.keys()), index=2)
-benchmark_name = st.sidebar.selectbox("2. Select Benchmark (Denominator)", list(st.session_state.asset_dict.keys()), index=0)
+selected_asset_name = st.sidebar.selectbox("1. Numerator", list(st.session_state.asset_dict.keys()), index=3)
+benchmark_name = st.sidebar.selectbox("2. Denominator", list(st.session_state.asset_dict.keys()), index=0)
 
-chart_type = st.sidebar.selectbox("3. Chart Style", ("Candlestick", "Bar (OHLC)", "Hollow Candlestick", "Line"))
-timeframe = st.sidebar.selectbox("4. Lookback Period", ("1 Month", "6 Months", "1 Year", "2 Years", "5 Years", "Max"), index=1)
-interval_selection = st.sidebar.selectbox("5. Timeframe (Interval)", ("Daily", "Weekly", "Monthly"))
+chart_type = st.sidebar.selectbox("3. Style", ("Candlestick", "Bar (OHLC)", "Hollow Candlestick", "Line"))
+timeframe = st.sidebar.selectbox("4. Lookback", ("1 Month", "6 Months", "1 Year", "2 Years", "5 Years", "Max"), index=1)
+interval_selection = st.sidebar.selectbox("5. Interval", ("Daily", "Weekly", "Monthly"))
 
 st.sidebar.markdown("---")
-st.sidebar.header("📈 Technical Indicators")
-selected_overlays = st.sidebar.multiselect("On-Chart Overlays", ["21 EMA", "50 SMA", "200 EMA", "AVWAP"])
-selected_oscillators = st.sidebar.multiselect("Lower Pane Oscillators", ["RSI (14)", "MACD (12, 26, 9)"])
+st.sidebar.header("📈 Indicators")
+selected_overlays = st.sidebar.multiselect("Overlays", ["21 EMA", "50 SMA", "200 EMA", "AVWAP"])
+selected_oscillators = st.sidebar.multiselect("Oscillators", ["RSI (14)", "MACD (12, 26, 9)"])
 
 period_map = {"1 Month": "1mo", "6 Months": "6mo", "1 Year": "1y", "2 Years": "2y", "5 Years": "5y", "Max": "max"}
 interval_map = {"Daily": "1d", "Weekly": "1wk", "Monthly": "1mo"}
 selected_period = period_map[timeframe]
 selected_interval = interval_map[interval_selection]
-
 
 # --- MATH & NEWS HELPERS ---
 def calculate_rsi(series, period=14):
@@ -91,38 +107,30 @@ def fetch_market_news():
         "https://feeds.a.dj.com/rss/RSSMarketsMain.xml", 
         "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664", 
     ]
-    target_keywords = [
-        'rate', 'yield', 'treasury', 'inflation', 'cpi', 'fed', 'rbi', 'bank', 
-        'earnings', 'revenue', 'profit', 'q1', 'q2', 'q3', 'q4', 
-        'acquire', 'acquisition', 'merger', 'divestiture', 'buyout', 
-        'war', 'geopolitic', 'tariff', 'strike', 'election'
-    ]
+    target_keywords = ['rate', 'yield', 'treasury', 'inflation', 'cpi', 'fed', 'rbi', 'bank', 'earnings', 'revenue', 'acquire', 'merger', 'war', 'tariff', 'geopolitic']
     news_items = []
     for url in feed_urls:
         try:
             parsed = feedparser.parse(url)
             for entry in parsed.entries:
-                title_lower = entry.title.lower()
-                if any(keyword in title_lower for keyword in target_keywords):
-                    news_items.append({
-                        "title": entry.title,
-                        "link": entry.link,
-                        "published": entry.get("published", "Recent")
-                    })
+                if any(kw in entry.title.lower() for kw in target_keywords):
+                    news_items.append({"title": entry.title, "link": entry.link, "published": entry.get("published", "")})
         except: continue
-            
-    seen_titles = set()
+    
     unique_news = []
+    seen = set()
     for item in news_items:
-        if item["title"] not in seen_titles:
+        if item["title"] not in seen:
             unique_news.append(item)
-            seen_titles.add(item["title"])
+            seen.add(item["title"])
     return unique_news[:15]
 
-# --- CHART RENDERING ENGINE (Reusable) ---
+# --- CHART RENDERING ENGINE ---
 def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, height=650):
-    num_ticker = st.session_state.asset_dict[num_name]
-    den_ticker = st.session_state.asset_dict[den_name]
+    num_ticker = st.session_state.asset_dict.get(num_name)
+    den_ticker = st.session_state.asset_dict.get(den_name)
+    
+    if not num_ticker or not den_ticker: return None
     
     num_data = fetch_yahoo_data(num_ticker, period_str, interval_str)
     den_data = fetch_yahoo_data(den_ticker, period_str, interval_str)
@@ -135,7 +143,6 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
 
     df = pd.merge(num_data, den_data, left_index=True, right_index=True, suffixes=('_num', '_den'))
     df.dropna(subset=['Close_num', 'Close_den'], inplace=True)
-
     if df.empty: return None
 
     df['Ratio_Open'] = df['Open_num'] / df['Open_den']
@@ -160,10 +167,8 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
         df['MACD_Signal'] = df['MACD_Line'].ewm(span=9).mean()
         df['MACD_Hist'] = df['MACD_Line'] - df['MACD_Signal']
 
-    num_rows = 1
-    row_heights = [0.6] if oscillators else [1.0]
-    if "RSI (14)" in oscillators: num_rows += 1; row_heights.append(0.2)
-    if "MACD (12, 26, 9)" in oscillators: num_rows += 1; row_heights.append(0.2)
+    num_rows = 1 + len(oscillators)
+    row_heights = [0.6] + [0.2] * len(oscillators) if oscillators else [1.0]
     row_heights = [h / sum(row_heights) for h in row_heights]
 
     fig = make_subplots(rows=num_rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
@@ -174,11 +179,11 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
     if c_type == "Line":
         fig.add_trace(go.Scatter(x=df.index, y=df['Ratio_Close'], mode='lines', name='Ratio', line=dict(color=TV_BLUE, width=2)), row=1, col=1)
     elif c_type == "Bar (OHLC)":
-        fig.add_trace(go.Ohlc(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], name='Ratio', increasing_line_color=TV_GREEN, decreasing_line_color=TV_RED), row=1, col=1)
+        fig.add_trace(go.Ohlc(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], increasing_line_color=TV_GREEN, decreasing_line_color=TV_RED), row=1, col=1)
     elif c_type == "Hollow Candlestick":
-        fig.add_trace(go.Candlestick(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], name='Ratio', increasing_line_color=TV_GREEN, increasing_fillcolor='rgba(0,0,0,0)', decreasing_line_color=TV_RED, decreasing_fillcolor='rgba(0,0,0,0)'), row=1, col=1)
+        fig.add_trace(go.Candlestick(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], increasing_line_color=TV_GREEN, increasing_fillcolor='rgba(0,0,0,0)', decreasing_line_color=TV_RED, decreasing_fillcolor='rgba(0,0,0,0)'), row=1, col=1)
     else:
-        fig.add_trace(go.Candlestick(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], name='Ratio', increasing_line_color=TV_GREEN, increasing_fillcolor=TV_GREEN, decreasing_line_color=TV_RED, decreasing_fillcolor=TV_RED), row=1, col=1)
+        fig.add_trace(go.Candlestick(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=df['Ratio_Close'], increasing_line_color=TV_GREEN, increasing_fillcolor=TV_GREEN, decreasing_line_color=TV_RED, decreasing_fillcolor=TV_RED), row=1, col=1)
 
     for ind in overlays:
         if ind in df.columns:
@@ -186,133 +191,114 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
             if not valid_data.empty:
                 color = ind_colors.get(ind, '#000000')
                 fig.add_trace(go.Scatter(x=df.index, y=df[ind], mode='lines', name=ind, line=dict(color=color, width=1.5)), row=1, col=1)
-                last_idx, last_val = valid_data.index[-1], valid_data.iloc[-1]
-                fig.add_annotation(
-                    x=last_idx, y=last_val, text=f"{ind}", font=dict(color="white", size=10),
-                    bgcolor=color, bordercolor=color, showarrow=True, arrowcolor=color, arrowhead=0,
-                    ax=35, ay=0, row=1, col=1
-                )
+                fig.add_annotation(x=valid_data.index[-1], y=valid_data.iloc[-1], text=f"{ind}", font=dict(color="white", size=10), bgcolor=color, bordercolor=color, showarrow=True, arrowcolor=color, arrowhead=0, ax=35, ay=0, row=1, col=1)
 
-    current_row = 2
+    curr = 2
     if "RSI (14)" in oscillators:
-        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], mode='lines', name='RSI', line=dict(color='#7E57C2')), row=current_row, col=1)
-        fig.add_hline(y=70, line_dash="dash", line_color=TV_GRID, row=current_row, col=1)
-        fig.add_hline(y=30, line_dash="dash", line_color=TV_GRID, row=current_row, col=1)
-        fig.update_yaxes(title_text="RSI", range=[0, 100], row=current_row, col=1)
-        current_row += 1
-        
+        fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], mode='lines', line=dict(color='#7E57C2')), row=curr, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color=TV_GRID, row=curr, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color=TV_GRID, row=curr, col=1)
+        fig.update_yaxes(title_text="RSI", range=[0, 100], row=curr, col=1); curr += 1
     if "MACD (12, 26, 9)" in oscillators:
-        fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Line'], mode='lines', name='MACD', line=dict(color=TV_BLUE)), row=current_row, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Signal'], mode='lines', name='Sig', line=dict(color='#FF9800')), row=current_row, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Line'], mode='lines', line=dict(color=TV_BLUE)), row=curr, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Signal'], mode='lines', line=dict(color='#FF9800')), row=curr, col=1)
         hist_colors = ['rgba(8,153,129,0.5)' if v >= 0 else 'rgba(242,54,69,0.5)' for v in df['MACD_Hist']]
-        fig.add_trace(go.Bar(x=df.index, y=df['MACD_Hist'], name='Hist', marker_color=hist_colors), row=current_row, col=1)
+        fig.add_trace(go.Bar(x=df.index, y=df['MACD_Hist'], marker_color=hist_colors), row=curr, col=1)
 
-    if period_str in ["1mo", "6mo"]:
-        x_format, d_tick = "%d %b %Y", None
-    else:
-        x_format, d_tick = "%b %Y", "M1" if period_str == "1y" else "M3"
+    x_format, d_tick = ("%d %b %Y", None) if period_str in ["1mo", "6mo"] else ("%b %Y", "M1" if period_str == "1y" else "M3")
 
     fig.update_layout(
-        template="plotly_white", plot_bgcolor='white', paper_bgcolor='white',
-        xaxis_rangeslider_visible=False, height=height, margin=dict(l=10, r=80, t=30, b=20), 
-        legend=dict(orientation="h", yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor="rgba(255, 255, 255, 0.7)", bordercolor=TV_GRID, borderwidth=1),
-        hovermode="x unified", dragmode="pan"
+        template="plotly_white", plot_bgcolor='white', paper_bgcolor='white', xaxis_rangeslider_visible=False, height=height, 
+        margin=dict(l=10, r=80, t=10, b=20), showlegend=False, hovermode="x unified", dragmode="pan"
     )
     fig.update_xaxes(showgrid=True, gridcolor=TV_GRID, tickformat=x_format, dtick=d_tick)
     fig.update_yaxes(showgrid=True, gridcolor=TV_GRID, side="right", tickformat=".4f")
 
     return fig
 
-# --- REUSABLE NEWS WIDGET ---
-def render_news_feed():
-    st.subheader("📰 Live Market News")
-    st.caption("Filtered: Macro, Rates, Earnings, Geopolitics")
-    with st.container(border=True):
-        news_data = fetch_market_news()
-        if not news_data:
-            st.info("No relevant macroeconomic news found in the last cycle.")
+def render_news_feed(height):
+    st.subheader("📰 Global Macro News")
+    with st.container(border=True, height=height):
+        news = fetch_market_news()
+        if not news: st.info("No relevant news fetched.")
         else:
-            with st.container(height=800): # Increased height to match the larger 15-chart grid
-                for item in news_data:
-                    st.markdown(f"**[{item['title']}]({item['link']})**")
-                    pub_date = item['published'].replace("+0000", "").strip()
-                    st.caption(f"🕒 {pub_date}")
-                    st.markdown("---")
+            for item in news:
+                st.markdown(f"**[{item['title']}]({item['link']})**")
+                st.caption(f"🕒 {item['published'].replace('+0000', '').strip()}")
+                st.markdown("---")
 
 # --- DUAL SCREEN TABS ---
-tab1, tab2 = st.tabs(["🖥️ Static Sector Rotation", "🔍 Dynamic Explorer"])
+tab1, tab2 = st.tabs(["🖥️ Macro Overview (Grid)", "🔍 Dynamic Explorer"])
 
-# --- SCREEN 1: STATIC SECTOR DASHBOARD ---
+# --- SCREEN 1: THE MACRO GRID ---
 with tab1:
-    col_main_static, col_news_static = st.columns([3, 1]) 
+    col_main, col_news = st.columns([3, 1]) 
     
-    with col_main_static:
-        st.subheader("Complete Sector Rotation (vs Broad Market 500)")
+    with col_main:
+        # Nested tabs prevent API spam by only loading what the user clicks
+        macro_tabs = st.tabs(["🇮🇳 NSE Sectors", "🇺🇸 US Markets", "🌍 Global Assets & Yields"])
         
-        # Comprehensive list of all 15 NSE Sector Indices
-        static_sectors = [
-            "Nifty Auto", "Nifty Bank", "Nifty Commodities", 
-            "Nifty Consumption", "Nifty Energy", "Nifty Financial Services", 
-            "Nifty FMCG", "Nifty Infrastructure", "Nifty IT", 
-            "Nifty Media", "Nifty Metal", "Nifty Pharma", 
-            "Nifty PSE", "Nifty PSU Bank", "Nifty Realty"
-        ]
-        
-        with st.spinner("Loading complete sector rotation data..."):
-            # Upgraded to a 3-column grid for dense visual packing
+        with macro_tabs[0]:
+            st.caption("Benchmark: Broad Market 500 (IND)")
+            nse_list = ["Nifty Bank", "Nifty IT", "Nifty Auto", "Nifty Pharma", "Nifty Metal", "Nifty Energy", "Nifty FMCG", "Nifty Realty", "Nifty PSU Bank"]
             cols = st.columns(3)
-            for idx, sector in enumerate(static_sectors):
-                with cols[idx % 3]:
-                    with st.container(border=True):
-                        st.markdown(f"**{sector}**") # Shortened title to fit 3-col layout better
-                        static_fig = render_chart(sector, "Broad Market 500", "6mo", "1d", "Candlestick", [], [], height=260)
-                        if static_fig:
-                            static_fig.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=50)) 
-                            st.plotly_chart(static_fig, use_container_width=True, key=f"static_sector_{idx}")
+            with st.spinner("Fetching NSE Data..."):
+                for idx, sec in enumerate(nse_list):
+                    with cols[idx % 3], st.container(border=True):
+                        st.markdown(f"**{sec}**")
+                        fig = render_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], [], height=250)
+                        if fig: st.plotly_chart(fig, use_container_width=True, key=f"nse_{idx}")
+                        
+        with macro_tabs[1]:
+            st.caption("Benchmark: S&P 500 (US)")
+            us_list = ["Nasdaq 100", "Russell 2000 (Small Cap)", "US Tech (XLK)", "US Financials (XLF)", "US Healthcare (XLV)", "US Energy (XLE)"]
+            cols = st.columns(3)
+            with st.spinner("Fetching US Data..."):
+                for idx, sec in enumerate(us_list):
+                    with cols[idx % 3], st.container(border=True):
+                        st.markdown(f"**{sec}**")
+                        fig = render_chart(sec, "S&P 500 (US)", "6mo", "1d", "Candlestick", [], [], height=250)
+                        if fig: st.plotly_chart(fig, use_container_width=True, key=f"us_{idx}")
 
-    with col_news_static:
-        render_news_feed()
+        with macro_tabs[2]:
+            st.caption("Ratios measuring Risk-On vs Risk-Off behaviors")
+            # Custom pairs for macro insights
+            macro_pairs = [
+                ("Gold (Spot)", "S&P 500 (US)", "Safe Haven vs Equity"),
+                ("US 20+ Year Treasuries (TLT)", "S&P 500 (US)", "Bonds vs Equity"),
+                ("Emerging Markets (EEM)", "S&P 500 (US)", "EM vs Developed"),
+                ("Bitcoin (USD)", "Gold (Spot)", "Digital vs Physical Gold")
+            ]
+            cols = st.columns(2)
+            with st.spinner("Fetching Macro Data..."):
+                for idx, (num, den, title) in enumerate(macro_pairs):
+                    with cols[idx % 2], st.container(border=True):
+                        st.markdown(f"**{title}** ({num} / {den})")
+                        fig = render_chart(num, den, "6mo", "1d", "Line", [], [], height=280)
+                        if fig: st.plotly_chart(fig, use_container_width=True, key=f"glb_{idx}")
+
+    with col_news:
+        render_news_feed(height=950)
 
 # --- SCREEN 2: DYNAMIC EXPLORER ---
 with tab2:
-    col_main_dyn, col_news_dyn = st.columns([3, 1]) 
+    col_dyn_main, col_dyn_news = st.columns([3, 1]) 
     
-    with col_main_dyn:
-        col_title, col_btn = st.columns([4, 1])
-        with col_title:
-            st.subheader(f"Ratio: {selected_asset_name} / {benchmark_name} ({interval_selection})")
-        with col_btn:
-            if st.button("🔄 Clear Drawings"):
-                st.rerun()
+    with col_dyn_main:
+        c1, c2 = st.columns([4, 1])
+        c1.subheader(f"{selected_asset_name} / {benchmark_name}")
+        if c2.button("🔄 Clear Drawings"): st.rerun()
 
-        with st.spinner("Rendering Dynamic Chart..."):
-            with st.container(border=True):
-                dynamic_fig = render_chart(
-                    selected_asset_name, benchmark_name, 
-                    selected_period, selected_interval, 
-                    chart_type, selected_overlays, selected_oscillators, height=700
-                )
-
-                if dynamic_fig:
-                    chart_config = {
-                        'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape'],
-                        'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True
-                    }
-                    st.plotly_chart(dynamic_fig, use_container_width=True, config=chart_config)
+        with st.spinner("Rendering Chart..."), st.container(border=True):
+            fig = render_chart(selected_asset_name, benchmark_name, selected_period, selected_interval, chart_type, selected_overlays, selected_oscillators, height=700)
+            if fig:
+                config = {'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape'], 'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True}
+                st.plotly_chart(fig, use_container_width=True, config=config)
                     
-    with col_news_dyn:
-        render_news_feed()
+    with col_dyn_news:
+        render_news_feed(height=780)
 
-# --- SYSTEM TELEMETRY & STATUS FOOTER ---
+# --- TELEMETRY ---
 st.markdown("---")
-end_time = time.time()
-latency = round(end_time - start_time, 2)
-current_time = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S UTC")
-
-st.caption(
-    f"🟢 **System Status:** Online | "
-    f"⏱️ **Data & Render Latency:** {latency}s | "
-    f"📡 **Engines:** Yahoo Finance (Charts) + WSJ/CNBC RSS (News) | "
-    f"🕒 **Last Sync:** {current_time} | "
-    f"📦 **Tracked Assets:** {len(st.session_state.asset_dict)}"
-)
+latency = round(time.time() - start_time, 2)
+st.caption(f"🟢 **System:** Online | ⏱️ **Latency:** {latency}s | 📡 **Engines:** YF API + RSS | 🕒 **Sync:** {pd.Timestamp.now().strftime('%H:%M:%S UTC')} | 📦 **Assets:** {len(st.session_state.asset_dict)}")
