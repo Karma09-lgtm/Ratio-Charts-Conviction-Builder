@@ -37,11 +37,29 @@ st.markdown("""
     .stButton > button:hover { border: 1px solid #2962FF; color: #2962FF; background-color: #f0f3fa;}
     .tear-sheet { font-size: 0.85rem; color: #787b86; display: flex; gap: 15px; margin-top: -10px; margin-bottom: 15px; padding: 10px; background: #f8f9fd; border-radius: 6px; border: 1px solid #e0e3eb;}
     .tear-val { font-weight: 700; color: #131722; }
+    
+    /* Social Share Button Styling */
+    .share-btn { display: inline-block; padding: 8px 12px; margin-bottom: 8px; border-radius: 4px; background: #f8f9fd; border: 1px solid #e0e3eb; color: #131722; text-decoration: none; font-size: 0.9rem; font-weight: 600; width: 100%; text-align: left; transition: 0.2s;}
+    .share-btn:hover { background: #f0f3fa; border-color: #2962FF; color: #2962FF;}
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🌍 Ratio Charts Conviction Builder")
+# --- HEADER WITH SHARE/EXPORT MENU ---
+c_title, c_export = st.columns([8, 2])
+with c_title:
+    st.title("🌍 Ratio Charts Conviction Builder")
+with c_export:
+    st.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
+    with st.popover("📤 Share & Export", use_container_width=True):
+        st.markdown("**Share Terminal Setup**")
+        st.markdown("<a href='https://twitter.com/intent/tweet?text=Analyzing+global+macro+correlations+on+the+Ratio+Charts+Conviction+Builder!&hashtags=Macro,Trading' target='_blank' class='share-btn'>𝕏 &nbsp; Share on X</a>", unsafe_allow_html=True)
+        st.markdown("<a href='mailto:?subject=Macro Terminal Analysis&body=Check out this advanced macro conviction dashboard setup.' target='_blank' class='share-btn'>✉️ &nbsp; Email Colleague</a>", unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown("**📸 High-Res Screenshots**")
+        st.caption("Hover over any interactive chart and click the **Camera Icon** in the top-right toolbar. The engine is configured to automatically download a clean, **4K Resolution (1600x900) PNG** of your analysis.")
 
+
+# --- CURRENCY MAPPING ENGINE ---
 CURRENCY_MAP = {
     "S&P 500": "$", "Nasdaq 100": "$", "Dow Jones": "$", "Russell 2000": "$", "VIX": "",
     "Broad Market 500 (IND)": "₹", "Nifty 50": "₹", "Nifty Bank": "₹", "Nifty IT": "₹", "Nifty Auto": "₹", "Nifty Pharma": "₹", "Nifty Metal": "₹", "Nifty Energy": "₹", "Nifty FMCG": "₹", "Nifty Realty": "₹", "Nifty PSU Bank": "₹",
@@ -50,6 +68,7 @@ CURRENCY_MAP = {
     "FTSE 100": "£", "DAX": "€", "STOXX 50": "€", "Nikkei 225": "¥", "ASX 200": "A$"
 }
 
+# --- BUG-PROOF STATE MANAGEMENT ---
 DEFAULT_ASSETS = {
     "S&P 500": "^GSPC", "Nasdaq 100": "^NDX", "Dow Jones": "^DJI", "Russell 2000": "^RUT", "VIX": "^VIX",
     "Broad Market 500 (IND)": "BSE-500.BO", "Nifty 50": "^NSEI", 
@@ -65,15 +84,19 @@ DEFAULT_WATCHLISTS = {
     "🔥 Tech Watch": {"Nasdaq 100": "^NDX", "US Tech ETF": "XLK", "Nifty IT": "^CNXIT"}
 }
 
-if 'asset_dict' not in st.session_state: st.session_state.asset_dict = DEFAULT_ASSETS.copy()
+if 'asset_dict' not in st.session_state:
+    st.session_state.asset_dict = DEFAULT_ASSETS.copy()
 else:
     for k, v in DEFAULT_ASSETS.items():
-        if k not in st.session_state.asset_dict: st.session_state.asset_dict[k] = v
+        if k not in st.session_state.asset_dict:
+            st.session_state.asset_dict[k] = v
 
-if 'watchlists' not in st.session_state: st.session_state.watchlists = DEFAULT_WATCHLISTS.copy()
+if 'watchlists' not in st.session_state:
+    st.session_state.watchlists = DEFAULT_WATCHLISTS.copy()
 else:
     for k, v in DEFAULT_WATCHLISTS.items():
-        if k not in st.session_state.watchlists: st.session_state.watchlists[k] = v
+        if k not in st.session_state.watchlists:
+            st.session_state.watchlists[k] = v
 
 if 'active_wl' not in st.session_state: st.session_state.active_wl = "⭐ Global Macro"
 if 'target_num' not in st.session_state: st.session_state.target_num = "S&P 500"
@@ -93,20 +116,17 @@ if omni_cmd:
             den_part_split = parts[1].strip().rsplit(' ', 1)
             den_part = den_part_split[0]
             
-            # Find closest matches
             matched_num = next((k for k in st.session_state.asset_dict.keys() if num_part.lower() in k.lower()), None)
             matched_den = next((k for k in st.session_state.asset_dict.keys() if den_part.lower() in k.lower()), None)
             
             if matched_num: st.session_state.target_num = matched_num
             if matched_den: st.session_state.target_den = matched_den
             
-            # Timeframe parsing
             if len(den_part_split) > 1:
                 tf = den_part_split[1].lower()
                 valid_tfs = ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]
                 if tf in valid_tfs: st.session_state.target_period = tf
         else:
-            # Single asset query
             num_part_split = parts[0].strip().rsplit(' ', 1)
             matched_num = next((k for k in st.session_state.asset_dict.keys() if num_part_split[0].lower() in k.lower()), None)
             if matched_num:
@@ -137,7 +157,6 @@ with st.sidebar.expander("⚙️ Asset Selection", expanded=True):
     selected_asset_name = st.selectbox("Numerator (Asset 1)", asset_options, index=idx_num) 
     benchmark_name = st.selectbox("Denominator (Asset 2)", asset_options, index=idx_den) 
     
-    # Update Session State if manually changed
     st.session_state.target_num = selected_asset_name
     st.session_state.target_den = benchmark_name
     
@@ -156,7 +175,6 @@ with st.sidebar.expander("⏱️ Time & Style", expanded=True):
 with st.sidebar.expander("📈 Technicals & Overlays", expanded=True):
     show_volume = st.checkbox("Show Volume Bar", value=True)
     selected_overlays = st.multiselect("Overlays", ["21 EMA", "50 SMA", "200 EMA", "AVWAP"], default=["50 SMA"])
-    # 2. DRAWDOWN OSCILLATOR ADDED
     selected_oscillators = st.multiselect("Oscillators", ["Volume", "RSI (14)", "MACD (12, 26, 9)", "Drawdown %"], default=["Volume"])
 
 # --- HELPERS & DATA ENGINES ---
@@ -175,7 +193,6 @@ def calculate_rsi(series, period=14):
 
 @st.cache_data(ttl=3600)
 def fetch_fundamentals(ticker_symbol):
-    """Fetches Tear Sheet data bulletproofed against YF API errors"""
     if not ticker_symbol or ticker_symbol == "None": return None
     try:
         tkr = yf.Ticker(ticker_symbol)
@@ -233,7 +250,6 @@ def fetch_market_news(keyword="None"):
     base_keywords = ['rate', 'yield', 'treasury', 'inflation', 'cpi', 'fed', 'rbi', 'bank', 'earnings', 'geopolitic']
     if keyword != "None": base_keywords.append(keyword.lower().split(" ")[0]) 
     
-    # 3. AI SENTIMENT TAGGING LOGIC
     bull_words = ['surge', 'jump', 'rise', 'up', 'beat', 'gain', 'bull', 'high', 'growth', 'soar']
     bear_words = ['plunge', 'drop', 'fall', 'down', 'miss', 'loss', 'bear', 'low', 'recession', 'crash', 'cut']
         
@@ -248,7 +264,6 @@ def fetch_market_news(keyword="None"):
                 if entry.title not in seen and any(kw in t_lower for kw in base_keywords):
                     pub_date = entry.get("published", entry.get("pubDate", "Recent"))
                     
-                    # Score sentiment
                     bull_score = sum(1 for w in bull_words if w in t_lower)
                     bear_score = sum(1 for w in bear_words if w in t_lower)
                     tag = "🟢" if bull_score > bear_score else "🔴" if bear_score > bull_score else "⚪"
@@ -258,10 +273,20 @@ def fetch_market_news(keyword="None"):
         except: continue
     return news_items[:15]
 
-# --- TRADINGVIEW CHART ENGINE ---
+# --- TRADINGVIEW CHART ENGINE WITH 4K EXPORT ---
 TV_CONFIG = {
     'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'drawclosedpath', 'drawcircle', 'drawrect', 'eraseshape'],
-    'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True
+    'displayModeBar': True, 
+    'displaylogo': False, 
+    'scrollZoom': True,
+    # This dictates the ultra-high resolution screenshot behavior
+    'toImageButtonOptions': {
+        'format': 'png', 
+        'filename': 'Macro_Conviction_Builder_Chart',
+        'height': 900,
+        'width': 1600,
+        'scale': 2 # Outputs at 3200x1800 (4K clarity)
+    }
 }
 STATIC_CONFIG = {'displayModeBar': False, 'scrollZoom': False}
 
@@ -308,7 +333,6 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
         df['MACD_Signal'] = df['MACD_Line'].ewm(span=9).mean()
         df['MACD_Hist'] = df['MACD_Line'] - df['MACD_Signal']
         
-    # 4. DRAWDOWN CALCULATION
     if "Drawdown %" in oscillators:
         df['Peak'] = c.cummax()
         df['Drawdown'] = ((c - df['Peak']) / df['Peak']) * 100
@@ -429,6 +453,7 @@ def render_watchlist(key_prefix):
         if not wl_data.empty:
             df = pd.DataFrame(wl_data)
             df['Price'] = df.apply(lambda row: f"{CURRENCY_MAP.get(row['Asset'], '')}{row['Price']:.2f}", axis=1)
+            
             styled_df = df.style.map(lambda x: 'color: #089981; font-weight: bold;' if x > 0 else 'color: #f23645; font-weight: bold;' if x < 0 else '', subset=['Chg %']).format({"Chg %": "{:+.2f}%"})
             event = st.dataframe(styled_df, hide_index=True, use_container_width=True, on_select="rerun", selection_mode="single-row", key=f"{key_prefix}_df")
             if len(event.selection.rows) > 0:
@@ -582,7 +607,6 @@ with tab2:
                             monthly_rtn = s_data.groupby(['Year', 'Month'])['Close'].apply(lambda x: (x.iloc[-1]/x.iloc[0] - 1)*100).unstack()
                             monthly_rtn.columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
                             
-                            # Plotly Heatmap for Seasonality
                             fig_sea = go.Figure(data=go.Heatmap(
                                 z=monthly_rtn.values, x=monthly_rtn.columns, y=monthly_rtn.index,
                                 colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
@@ -615,7 +639,7 @@ with tab3:
                 corr_data = yf.download(tkr_list, period="6mo", interval="1d", progress=False)['Close']
                 
                 if isinstance(corr_data, pd.Series): corr_data = corr_data.to_frame()
-                corr_data.columns = name_list # Rename to readable names
+                corr_data.columns = name_list 
                 
                 corr_matrix = corr_data.pct_change().corr().round(2)
                 
