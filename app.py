@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import time
 import feedparser
 import json
+import requests
 import streamlit.components.v1 as components
 
 # --- PAGE CONFIGURATION & TIMER START ---
@@ -63,7 +64,10 @@ st.markdown("""
 
 # --- HEADER ---
 c_title, c_export = st.columns([8, 2])
-with c_title: st.title("🌍 Ratio Charts Conviction Builder")
+with c_title: 
+    st.title("🌍 Ratio Charts Conviction Builder")
+    st.markdown("<p style='color:#787b86; font-size:0.85rem; margin-top:-15px; margin-bottom:15px;'>Powered by Karma Analytics and Advisory Ltd.</p>", unsafe_allow_html=True)
+
 with c_export:
     st.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
     with st.popover("📤 Share & Export", use_container_width=True):
@@ -111,23 +115,58 @@ if 'active_tab' not in st.session_state: st.session_state.active_tab = "🖥️ 
 
 # --- UNIVERSAL OMNIBOX RESOLVER ---
 def resolve_symbol(query):
-    query = query.strip().upper()
-    if not query or query == "NONE": return "None"
+    query = query.strip()
+    if not query or query.upper() == "NONE": return "None"
+    
+    q_upper = query.upper()
     
     # 1. Search existing local dictionary
     for name, tkr in st.session_state.asset_dict.items():
-        if query == name.upper() or query == tkr.upper():
+        if q_upper == name.upper() or q_upper == tkr.upper():
             return name
             
-    # 2. If not found, dynamically fetch from Yahoo Finance global feed
-    with st.spinner(f"Searching global feed for '{query}'..."):
+    # 2. Hardcoded aliases for common conversational inputs
+    aliases = {
+        "SOLANA": "SOL-USD", "USVIX": "^VIX", "VIX": "^VIX", 
+        "SPY": "SPY", "QQQ": "QQQ", "DXY": "DX-Y.NYB", 
+        "SPX": "^GSPC", "NDX": "^NDX", "RUT": "^RUT"
+    }
+    if q_upper in aliases:
+        test_sym = aliases[q_upper]
         try:
-            test_data = yf.download(query, period="5d", interval="1d", progress=False)
-            if test_data is not None and not test_data.empty:
-                st.session_state.asset_dict[query] = query # Add to dictionary dynamically
-                return query
-        except:
+            td = yf.download(test_sym, period="1d", progress=False)
+            if td is not None and not td.empty:
+                st.session_state.asset_dict[test_sym] = test_sym
+                return test_sym
+        except: pass
+
+    # 3. Direct Yahoo Download Test (If they typed a valid ticker directly)
+    with st.spinner(f"Verifying '{q_upper}'..."):
+        try:
+            td = yf.download(q_upper, period="1d", progress=False)
+            if td is not None and not td.empty:
+                st.session_state.asset_dict[q_upper] = q_upper
+                return q_upper
+        except: pass
+
+    # 4. Fuzzy Search via Yahoo API (Catches things like "Apple" -> "AAPL")
+    with st.spinner(f"Searching global exchanges for '{query}'..."):
+        try:
+            url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}"
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            res = requests.get(url, headers=headers, timeout=5)
+            data = res.json()
+            if 'quotes' in data and len(data['quotes']) > 0:
+                for quote in data['quotes']:
+                    sym = quote.get('symbol')
+                    if sym:
+                        td = yf.download(sym, period="1d", progress=False)
+                        if td is not None and not td.empty:
+                            st.session_state.asset_dict[sym] = sym
+                            return sym
+        except Exception:
             pass
+            
     return None
 
 # --- SIDEBAR CONTROLS ---
@@ -142,24 +181,24 @@ with st.sidebar.form(key="omni_form", clear_on_submit=True):
 if omni_submit and omni_cmd:
     parts = omni_cmd.split('/')
     try:
-        tf = st.session_state.target_period # Default to current timeframe
+        tf = st.session_state.target_period
         num_query = parts[0].strip()
         den_query = "None"
         
-        if len(parts) == 2: # Ratio search
+        if len(parts) == 2:
             den_part_split = parts[1].strip().rsplit(' ', 1)
             den_query = den_part_split[0]
             if len(den_part_split) > 1:
                 tf_cand = den_part_split[1].lower()
                 if tf_cand in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: tf = tf_cand
-        else: # Single asset search
+        else:
             num_part_split = parts[0].strip().rsplit(' ', 1)
             num_query = num_part_split[0]
             if len(num_part_split) > 1:
                 tf_cand = num_part_split[1].lower()
                 if tf_cand in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: tf = tf_cand
         
-        # Smart Resolve (Local + Global)
+        # SMART ROUTING
         res_num = resolve_symbol(num_query)
         res_den = resolve_symbol(den_query)
         
@@ -173,7 +212,6 @@ if omni_submit and omni_cmd:
             st.toast(f"Could not locate data for '{num_query}' on global exchanges.", icon="⚠️")
     except Exception as e:
         st.toast("Command error. Use format: Asset1 / Asset2 timeframe", icon="⚠️")
-
 
 with st.sidebar.expander("🧩 Layout Manager", expanded=False):
     st.caption("Toggle sections to free up screen real estate.")
@@ -1156,6 +1194,7 @@ elif st.session_state.active_tab == "🔍 Dynamic Explorer":
                             monthly_rtn = s_data.groupby(['Year', 'Month'])['Close'].apply(lambda x: (x.iloc[-1]/x.iloc[0] - 1)*100).unstack()
                             monthly_rtn.columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
                             
+                            # Plotly exclusively retained for the Heatmap visualization
                             fig_sea = go.Figure(data=go.Heatmap(
                                 z=monthly_rtn.values, x=monthly_rtn.columns, y=monthly_rtn.index,
                                 colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
