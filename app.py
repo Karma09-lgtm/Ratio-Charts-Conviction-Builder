@@ -142,6 +142,15 @@ if omni_submit and omni_cmd:
         st.rerun() 
     except Exception: st.toast("Command error. Use format: Asset1 / Asset2 timeframe", icon="⚠️")
 
+
+# --- NEW DRAWING TOOLBOX ---
+with st.sidebar.expander("🎨 Custom Drawing Toolbox", expanded=True):
+    st.caption("Customize your trendlines before drawing them on the chart.")
+    c_color, c_width = st.columns([1, 2])
+    with c_color: draw_color = st.color_picker("Line Color", "#2962FF")
+    with c_width: draw_width = st.slider("Line Thickness", 1, 5, 2)
+    st.info("💡 **To Draw Horizontal Lines:** Select the Trendline tool and draw straight across.\n\n💡 **To Delete:** Select a line and press `Delete` on your keyboard, or click the Eraser icon.")
+
 with st.sidebar.expander("🧹 Data & History Management", expanded=False):
     st.caption("Wipe local cache and force fresh data pull.")
     del_timeframe = st.selectbox("Select History to Delete", ["Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time History"])
@@ -280,11 +289,9 @@ def fetch_market_news(keyword="None"):
 
 
 # --- TRADINGVIEW CHART ENGINE WITH ENHANCED DRAWING CAPABILITIES ---
-# Added drawhline (horizontal infinite line) and drawvline (vertical line)
 TV_CONFIG = {
     'modeBarButtonsToAdd': [
-        'drawline', 'drawhline', 'drawvline', 
-        'drawopenpath', 'drawclosedpath', 'drawcircle', 'drawrect', 'eraseshape'
+        'drawline', 'drawopenpath', 'drawclosedpath', 'drawcircle', 'drawrect', 'eraseshape'
     ],
     'displayModeBar': True, 
     'displaylogo': False, 
@@ -293,7 +300,7 @@ TV_CONFIG = {
 }
 
 STATIC_CONFIG = {
-    'modeBarButtonsToAdd': ['drawline', 'drawhline', 'drawrect', 'eraseshape'],
+    'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape'],
     'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True
 }
 
@@ -403,7 +410,15 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
                 hud_text += f" &nbsp; <span style='color:{colors.get(ind, '#000')}'><b>{ind}:</b> {df[ind].iloc[-1]:{dec}}</span>"
         fig.add_annotation(xref="x domain", yref="y domain", x=0.01, y=0.99, text=hud_text, showarrow=False, font=dict(size=11, color="#131722"), align="left", bgcolor="rgba(255,255,255,0.7)", row=1, col=1)
 
-    fig.update_layout(template="plotly_white", plot_bgcolor=BG, paper_bgcolor=BG, xaxis_rangeslider_visible=False, height=height, margin=dict(l=10, r=45, t=10, b=10), showlegend=False, hovermode="x unified", dragmode="pan", font=dict(color="#131722", size=11))
+    # DYNAMIC DRAWING TOOLBOX INTEGRATION
+    fig.update_layout(
+        template="plotly_white", plot_bgcolor=BG, paper_bgcolor=BG, xaxis_rangeslider_visible=False, height=height, 
+        margin=dict(l=10, r=45, t=10, b=10), showlegend=False, hovermode="x unified", dragmode="pan", 
+        font=dict(color="#131722", size=11),
+        # This ties the Plotly drawing engine to the Streamlit Sidebar colors!
+        newshape=dict(line_color=draw_color, line_width=draw_width)
+    )
+    
     x_format, d_tick = ("%d %b %Y", None) if period_str in ["1mo", "3mo", "6mo"] else ("%b %Y", "M1" if period_str == "1y" else "M3")
     
     if show_rangeselector:
@@ -422,7 +437,7 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
 def expand_chart_modal(num_name, den_name):
     title = f"{num_name}" if den_name == "None" else f"{num_name} / {den_name}"
     st.markdown(f"### {title}")
-    st.caption("💡 *Tip: Click the Eraser icon, then click a drawn shape to delete it. Press 'Clear All Drawings' to reset.*")
+    st.caption("💡 *Tip: Double-click the chart background to reset the zoom scale.*")
     with st.spinner("Loading High-Res Interactive Engine..."):
         fig = render_chart(num_name, den_name, "max", "1d", "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], show_hud=True, show_rangeselector=True, height=650)
         if fig: st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
@@ -598,9 +613,10 @@ with tab2:
         else: c1.subheader("No Assets Selected")
         
         with c2:
-            if st.button("🗑️ Clear All Charts & Drawings", use_container_width=True): st.rerun()
+            if st.button("🗑️ Clear Charts & Cache", use_container_width=True): 
+                st.cache_data.clear()
+                st.rerun()
 
-        st.caption("💡 *Tip: To erase a specific line, click the Eraser icon then click the line, or select the line and press the Delete key.*")
         with st.spinner("Rendering Chart..."), st.container(border=True):
             fig = render_chart(selected_asset_name, benchmark_name, timeframe, interval_selection, chart_type, selected_overlays, selected_oscillators, show_vol=show_volume, analysis_mode=analysis_mode.split()[0], show_hud=True, show_rangeselector=True, height=700)
             if fig: st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
