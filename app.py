@@ -55,23 +55,38 @@ CURRENCY_MAP = {
     "FTSE 100": "£", "DAX": "€", "STOXX 50": "€", "Nikkei 225": "¥", "ASX 200": "A$"
 }
 
-# --- STATE MANAGEMENT (ASSETS & WATCHLISTS) ---
+# --- BUG-PROOF STATE MANAGEMENT ---
+# Define defaults outside the if statement
+DEFAULT_ASSETS = {
+    "S&P 500": "^GSPC", "Nasdaq 100": "^NDX", "Dow Jones": "^DJI", "Russell 2000": "^RUT", "VIX": "^VIX",
+    "Broad Market 500 (IND)": "BSE-500.BO", "Nifty 50": "^NSEI", 
+    "Nifty Bank": "^NSEBANK", "Nifty IT": "^CNXIT", "Nifty Auto": "^CNXAUTO", "Nifty Pharma": "^CNXPHARMA", 
+    "Nifty Metal": "^CNXMETAL", "Nifty Energy": "^CNXENERGY", "Nifty FMCG": "^CNXFMCG", "Nifty Realty": "^CNXREALTY", "Nifty PSU Bank": "^CNXPSUBANK",
+    "Gold (Spot)": "GC=F", "Silver": "SI=F", "Crude Oil": "CL=F", "Bitcoin": "BTC-USD", "Ethereum": "ETH-USD",
+    "US 20+ Yr Treasury": "TLT", "US Tech ETF": "XLK", "US Fin ETF": "XLF", "US Healthcare ETF": "XLV", "US Energy ETF": "XLE", "Emerging Markets": "EEM",
+    "FTSE 100": "^FTSE", "DAX": "^GDAXI", "STOXX 50": "^STOXX50E", "Nikkei 225": "^N225", "ASX 200": "^AXJO"
+}
+
+DEFAULT_WATCHLISTS = {
+    "⭐ Global Macro": {"S&P 500": "^GSPC", "DAX": "^GDAXI", "Nikkei 225": "^N225", "Gold (Spot)": "GC=F"},
+    "🔥 Tech Watch": {"Nasdaq 100": "^NDX", "US Tech ETF": "XLK", "Nifty IT": "^CNXIT"}
+}
+
+# Merge new defaults into existing session state to prevent KeyErrors on reloads
 if 'asset_dict' not in st.session_state:
-    st.session_state.asset_dict = {
-        "S&P 500": "^GSPC", "Nasdaq 100": "^NDX", "Dow Jones": "^DJI", "Russell 2000": "^RUT", "VIX": "^VIX",
-        "Broad Market 500 (IND)": "BSE-500.BO", "Nifty 50": "^NSEI", 
-        "Nifty Bank": "^NSEBANK", "Nifty IT": "^CNXIT", "Nifty Auto": "^CNXAUTO", "Nifty Pharma": "^CNXPHARMA", 
-        "Nifty Metal": "^CNXMETAL", "Nifty Energy": "^CNXENERGY", "Nifty FMCG": "^CNXFMCG", "Nifty Realty": "^CNXREALTY", "Nifty PSU Bank": "^CNXPSUBANK",
-        "Gold (Spot)": "GC=F", "Silver": "SI=F", "Crude Oil": "CL=F", "Bitcoin": "BTC-USD", "Ethereum": "ETH-USD",
-        "US 20+ Yr Treasury": "TLT", "US Tech ETF": "XLK", "US Fin ETF": "XLF", "US Healthcare ETF": "XLV", "US Energy ETF": "XLE", "Emerging Markets": "EEM",
-        "FTSE 100": "^FTSE", "DAX": "^GDAXI", "STOXX 50": "^STOXX50E", "Nikkei 225": "^N225", "ASX 200": "^AXJO"
-    }
+    st.session_state.asset_dict = DEFAULT_ASSETS.copy()
+else:
+    for k, v in DEFAULT_ASSETS.items():
+        if k not in st.session_state.asset_dict:
+            st.session_state.asset_dict[k] = v
 
 if 'watchlists' not in st.session_state:
-    st.session_state.watchlists = {
-        "⭐ Global Macro": {"S&P 500": "^GSPC", "DAX": "^GDAXI", "Nikkei 225": "^N225", "Gold (Spot)": "GC=F"},
-        "🔥 Tech Watch": {"Nasdaq 100": "^NDX", "US Tech ETF": "XLK", "Nifty IT": "^CNXIT"}
-    }
+    st.session_state.watchlists = DEFAULT_WATCHLISTS.copy()
+else:
+    for k, v in DEFAULT_WATCHLISTS.items():
+        if k not in st.session_state.watchlists:
+            st.session_state.watchlists[k] = v
+
 if 'active_wl' not in st.session_state: st.session_state.active_wl = "⭐ Global Macro"
 if 'target_asset' not in st.session_state: st.session_state.target_asset = "S&P 500"
 
@@ -155,6 +170,8 @@ def fetch_bulk_watchlist(tickers_dict):
                     last, prev = col.iloc[-1], col.iloc[-2]
                     chg = ((last - prev) / prev) * 100
                     results.append({"Asset": name, "Price": round(last, 2), "Chg %": round(chg, 2)})
+                elif len(col) == 1:
+                    results.append({"Asset": name, "Price": round(col.iloc[-1], 2), "Chg %": 0.00})
         return pd.DataFrame(results)
     except: return pd.DataFrame()
 
@@ -187,7 +204,7 @@ TV_CONFIG = {
     'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'drawclosedpath', 'drawcircle', 'drawrect', 'eraseshape'],
     'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True
 }
-STATIC_CONFIG = {'displayModeBar': False, 'scrollZoom': False} # Clean mode for static grid
+STATIC_CONFIG = {'displayModeBar': False, 'scrollZoom': False}
 
 def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol=True, analysis_mode="Ratio", show_hud=True, show_rangeselector=True, height=650):
     if num_name == "None" and den_name == "None": return None
@@ -244,6 +261,7 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
     else: row_heights = [0.65, 0.15] + [0.20 / len(active_osc)] * len(active_osc)
     
     fig = make_subplots(rows=num_rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
+
     TV_GREEN, TV_RED, TV_BLUE, TV_GRID, BG = '#089981', '#f23645', '#2962FF', '#e0e3eb', '#ffffff'
 
     # 1. Main Chart
@@ -281,7 +299,7 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
         fig.add_trace(go.Bar(x=df.index, y=df['MACD_Hist'], marker_color=hc), row=curr_row, col=1)
         fig.update_yaxes(title_text="MACD", row=curr_row, col=1)
 
-    # --- TRADINGVIEW HUD (Only if requested) ---
+    # --- TRADINGVIEW HUD ---
     dec = ".2f" if analysis_mode == "Correlation" or den_name == "None" else ".4f"
     if show_hud:
         last_row = df.iloc[-1]
@@ -294,7 +312,6 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
 
         fig.add_annotation(xref="x domain", yref="y domain", x=0.01, y=0.99, text=hud_text, showarrow=False, font=dict(size=11, color="#131722"), align="left", bgcolor="rgba(255,255,255,0.7)", row=1, col=1)
 
-    # --- LAYOUT FORMATTING & RANGE SELECTORS ---
     fig.update_layout(template="plotly_white", plot_bgcolor=BG, paper_bgcolor=BG, xaxis_rangeslider_visible=False, height=height, margin=dict(l=10, r=45, t=10, b=10), showlegend=False, hovermode="x unified", dragmode="pan", font=dict(color="#131722", size=11))
     
     x_format, d_tick = ("%d %b %Y", None) if period_str in ["1mo", "3mo", "6mo"] else ("%b %Y", "M1" if period_str == "1y" else "M3")
@@ -364,7 +381,6 @@ def render_watchlist(key_prefix):
         wl_data = fetch_bulk_watchlist(st.session_state.watchlists[active_wl])
         if not wl_data.empty:
             df = pd.DataFrame(wl_data)
-            # Add Native Currency Symbols to Watchlist
             df['Price'] = df.apply(lambda row: f"{CURRENCY_MAP.get(row['Asset'], '')}{row['Price']:.2f}", axis=1)
             
             styled_df = df.style.map(lambda x: 'color: #089981; font-weight: bold;' if x > 0 else 'color: #f23645; font-weight: bold;' if x < 0 else '', subset=['Chg %']).format({"Chg %": "{:+.2f}%"})
@@ -393,11 +409,7 @@ tab1, tab2 = st.tabs(["🖥️ Macro Overview (Grid)", "🔍 Dynamic Explorer"])
 # --- SCREEN 1: THE MACRO GRID ---
 with tab1:
     st.subheader("🌐 Live Global Markets")
-    # Expanding to 12 top assets across 2 rows
-    top_indices = [
-        "S&P 500", "Nasdaq 100", "DAX", "FTSE 100", "STOXX 50", "Nikkei 225",
-        "ASX 200", "Nifty 50", "Gold (Spot)", "Crude Oil", "Bitcoin", "US 20+ Yr Treasury"
-    ]
+    top_indices = ["S&P 500", "Nasdaq 100", "DAX", "FTSE 100", "STOXX 50", "Nikkei 225", "ASX 200", "Nifty 50", "Gold (Spot)", "Crude Oil", "Bitcoin", "US 20+ Yr Treasury"]
     
     with st.spinner("Syncing Global Markets..."):
         for row in range(0, len(top_indices), 6):
@@ -414,7 +426,6 @@ with tab1:
                             c_title, c_btn = st.columns([4,1])
                             c_title.markdown(f"<div style='font-size:0.85rem; font-weight:600; color:#787b86;'>{idx_name}</div>", unsafe_allow_html=True)
                             
-                            # Clean, subtle ⛶ expand button
                             if c_btn.button("⛶", key=f"top_exp_{idx_name}", help="Expand Chart"):
                                 expand_chart_modal(idx_name, "None")
                                 
@@ -443,7 +454,6 @@ with tab1:
                     head1.markdown(f"**{sec}**")
                     if head2.button("⛶", key=f"btn_nse_{idx}"): expand_chart_modal(sec, "Broad Market 500 (IND)")
                     
-                    # Clean Sparkline Grid - No HUD, No Range Selector, No Toolbar
                     fig = render_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
                     if fig: st.plotly_chart(fig, use_container_width=True, key=f"nse_c_{idx}", config=STATIC_CONFIG)
                         
@@ -486,7 +496,6 @@ with tab2:
     with col_dyn_main:
         c1, c2 = st.columns([4, 1])
         
-        # Dynamic Price Header Integration
         if selected_asset_name != "None":
             tkr = st.session_state.asset_dict[selected_asset_name]
             data = fetch_yahoo_data(tkr, "5d", "1d")
@@ -506,7 +515,6 @@ with tab2:
             if st.button("🔄 Clear Screen", use_container_width=True): st.rerun()
 
         with st.spinner("Rendering Chart..."), st.container(border=True):
-            # Dynamic Explorer gets Full HUD and Range Selectors
             fig = render_chart(selected_asset_name, benchmark_name, timeframe, interval_selection, chart_type, selected_overlays, selected_oscillators, show_vol=show_volume, analysis_mode=analysis_mode.split()[0], show_hud=True, show_rangeselector=True, height=700)
             if fig:
                 st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
