@@ -54,7 +54,7 @@ with c_export:
         st.markdown("<a href='mailto:?subject=Macro Terminal Analysis&body=Check out this advanced macro conviction dashboard setup.' target='_blank' class='share-btn'>✉️ &nbsp; Email Colleague</a>", unsafe_allow_html=True)
         st.markdown("---")
         st.markdown("**📸 High-Res Screenshots**")
-        st.caption("Hover over any interactive chart and click the **Camera Icon** in the top-right toolbar. The engine is configured to automatically download a clean, **4K Resolution (1600x900) PNG** of your analysis.")
+        st.caption("Hover over any interactive chart and click the **Camera Icon** in the top-right toolbar to download a **4K Resolution (1600x900) PNG**.")
 
 # --- CURRENCY MAPPING ENGINE ---
 CURRENCY_MAP = {
@@ -65,7 +65,7 @@ CURRENCY_MAP = {
     "FTSE 100": "£", "DAX": "€", "STOXX 50": "€", "Nikkei 225": "¥", "ASX 200": "A$"
 }
 
-# --- BULLETPROOF STATE MANAGEMENT ---
+# --- BUG-PROOF STATE MANAGEMENT ---
 DEFAULT_ASSETS = {
     "S&P 500": "^GSPC", "Nasdaq 100": "^NDX", "Dow Jones": "^DJI", "Russell 2000": "^RUT", "VIX": "^VIX",
     "Broad Market 500 (IND)": "BSE-500.BO", "Nifty 50": "^NSEI", 
@@ -96,11 +96,13 @@ if 'target_num' not in st.session_state: st.session_state.target_num = "S&P 500"
 if 'target_den' not in st.session_state: st.session_state.target_den = "None"
 if 'target_period' not in st.session_state: st.session_state.target_period = "1y"
 
+# NEW: Favorites and Recent Trackers
+if 'fav_ratios' not in st.session_state: st.session_state.fav_ratios = [("Gold (Spot)", "S&P 500"), ("Nasdaq 100", "Russell 2000")]
+if 'recent_ratios' not in st.session_state: st.session_state.recent_ratios = []
 
 # --- SIDEBAR: OMNIBOX & CONTROLS ---
 st.sidebar.title("⚙️ Terminal Setup")
 
-# 1. THE OMNIBOX
 st.sidebar.markdown("**💻 Command Line**")
 with st.sidebar.form(key="omni_form", clear_on_submit=True):
     col_cmd, col_btn = st.columns([3, 1])
@@ -114,20 +116,16 @@ if omni_submit and omni_cmd:
     parts = omni_cmd.split('/')
     try:
         if len(parts) == 2:
-            num_part = parts[0].strip()
-            den_part_split = parts[1].strip().rsplit(' ', 1)
+            num_part, den_part_split = parts[0].strip(), parts[1].strip().rsplit(' ', 1)
             den_part = den_part_split[0]
-            
             matched_num = next((k for k in st.session_state.asset_dict.keys() if num_part.lower() in k.lower()), None)
             matched_den = next((k for k in st.session_state.asset_dict.keys() if den_part.lower() in k.lower()), None)
             
             if matched_num: st.session_state.target_num = matched_num
             if matched_den: st.session_state.target_den = matched_den
-            
             if len(den_part_split) > 1:
                 tf = den_part_split[1].lower()
-                valid_tfs = ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]
-                if tf in valid_tfs: st.session_state.target_period = tf
+                if tf in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: st.session_state.target_period = tf
         else:
             num_part_split = parts[0].strip().rsplit(' ', 1)
             matched_num = next((k for k in st.session_state.asset_dict.keys() if num_part_split[0].lower() in k.lower()), None)
@@ -137,7 +135,6 @@ if omni_submit and omni_cmd:
             if len(num_part_split) > 1:
                 tf = num_part_split[1].lower()
                 if tf in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: st.session_state.target_period = tf
-        
         st.toast(f"Loaded: {st.session_state.target_num}", icon="🚀")
         st.rerun() 
     except Exception: st.toast("Command error. Use format: Asset1 / Asset2 timeframe", icon="⚠️")
@@ -147,7 +144,6 @@ with st.sidebar.expander("🎨 Custom Drawing Toolbox", expanded=True):
     c_color, c_width = st.columns([1, 2])
     with c_color: draw_color = st.color_picker("Line Color", "#2962FF")
     with c_width: draw_width = st.slider("Line Thickness", 1, 5, 2)
-    st.info("💡 **To Delete:** Select a line and press `Delete` on your keyboard, or click the Eraser icon.")
 
 with st.sidebar.expander("🧹 Data & History Management", expanded=False):
     st.caption("Wipe local cache and force fresh data pull.")
@@ -171,7 +167,6 @@ with st.sidebar.expander("📝 Watchlist Manager", expanded=False):
 
 st.sidebar.markdown("---")
 
-# --- BUG FIX: DECOUPLED WIDGET KEYS FROM SESSION STATE ---
 with st.sidebar.expander("⚙️ Asset Selection", expanded=True):
     asset_options = ["None"] + list(st.session_state.asset_dict.keys())
     idx_num = asset_options.index(st.session_state.target_num) if st.session_state.target_num in asset_options else 1
@@ -182,17 +177,14 @@ with st.sidebar.expander("⚙️ Asset Selection", expanded=True):
     
     st.session_state.target_num = selected_asset_name
     st.session_state.target_den = benchmark_name
-    
     analysis_mode = st.radio("Analysis Mode", ["Ratio", "Correlation (20d)"], horizontal=True)
 
 with st.sidebar.expander("⏱️ Time & Style", expanded=True):
     c1, c2 = st.columns(2)
     tf_options = ("1mo", "3mo", "6mo", "1y", "2y", "5y", "max")
     idx_tf = tf_options.index(st.session_state.target_period) if st.session_state.target_period in tf_options else 3
-    
     with c1: timeframe = st.selectbox("Data Fetch", tf_options, index=idx_tf)
     st.session_state.target_period = timeframe
-    
     with c2: interval_selection = st.selectbox("Interval", ("1d", "1wk", "1mo"))
     chart_type = st.selectbox("Style", ("Candlestick", "Bar (OHLC)", "Line"))
 
@@ -287,11 +279,9 @@ def fetch_market_news(keyword="None"):
                 t_lower = entry.title.lower()
                 if entry.title not in seen and any(kw in t_lower for kw in base_keywords):
                     pub_date = entry.get("published", entry.get("pubDate", "Recent"))
-                    
                     bull_score = sum(1 for w in bull_words if w in t_lower)
                     bear_score = sum(1 for w in bear_words if w in t_lower)
                     tag = "🟢" if bull_score > bear_score else "🔴" if bear_score > bull_score else "⚪"
-                    
                     news_items.append({"title": entry.title, "link": entry.link, "published": pub_date, "tag": tag})
                     seen.add(entry.title)
         except: continue
@@ -300,16 +290,10 @@ def fetch_market_news(keyword="None"):
 
 # --- TRADINGVIEW CHART ENGINE WITH ENHANCED DRAWING CAPABILITIES ---
 TV_CONFIG = {
-    'modeBarButtonsToAdd': [
-        'drawline', 'drawhline', 'drawvline', 
-        'drawopenpath', 'drawclosedpath', 'drawcircle', 'drawrect', 'eraseshape'
-    ],
-    'displayModeBar': True, 
-    'displaylogo': False, 
-    'scrollZoom': True,
+    'modeBarButtonsToAdd': ['drawline', 'drawhline', 'drawvline', 'drawopenpath', 'drawclosedpath', 'drawcircle', 'drawrect', 'eraseshape'],
+    'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True,
     'toImageButtonOptions': {'format': 'png', 'filename': 'Macro_Conviction_Builder_Chart', 'height': 900, 'width': 1600, 'scale': 2 }
 }
-
 STATIC_CONFIG = {
     'modeBarButtonsToAdd': ['drawline', 'drawhline', 'drawrect', 'eraseshape'],
     'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True
@@ -529,14 +513,9 @@ with tab1:
                     
                     with cols_top[col_idx]:
                         with st.container(border=True):
-                            c_title, c_mod, c_exp = st.columns([5, 2, 2])
+                            c_title, c_btn = st.columns([4,1])
                             c_title.markdown(f"<div style='font-size:0.85rem; font-weight:600; color:#787b86; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{idx_name}</div>", unsafe_allow_html=True)
-                            if c_mod.button("⛶", key=f"top_mod_{idx_name}", help="Full Screen"): expand_chart_modal(idx_name, "None")
-                            if c_exp.button("🔍", key=f"top_exp_{idx_name}", help="Analyze in Explorer"):
-                                st.session_state.target_num = idx_name
-                                st.session_state.target_den = "None"
-                                st.toast(f"Loaded {idx_name} into Dynamic Explorer! 🚀", icon="✅")
-                                st.rerun()
+                            if c_btn.button("⛶", key=f"top_exp_{idx_name}", help="Expand Chart"): expand_chart_modal(idx_name, "None")
                                 
                             data = fetch_yahoo_data(ticker, "5d", "1d")
                             if data is not None and not data.empty and len(data) >= 2:
@@ -548,39 +527,56 @@ with tab1:
                             else: st.metric(label="val", value="N/A", label_visibility="collapsed")
                     
     st.markdown("---")
-    col_main, col_news = st.columns([3, 1]) 
     
+    # --- NEW LEFT PANEL FOR FAVORITES & RECENTS ---
+    col_left, col_main, col_news = st.columns([2, 5, 2.5]) 
+    
+    with col_left:
+        st.subheader("⭐ Favorites")
+        if not st.session_state.fav_ratios: st.caption("No favorites saved yet.")
+        for idx, (num, den) in enumerate(st.session_state.fav_ratios):
+            with st.container(border=True):
+                disp_text = f"**{num}**" if den == "None" else f"**{num}**<br><span style='color:#787b86;'>/ {den}</span>"
+                st.markdown(disp_text, unsafe_allow_html=True)
+                c1, c2 = st.columns([3, 1])
+                if c1.button("🔍 Load", key=f"fav_load_{idx}", use_container_width=True):
+                    st.session_state.target_num = num
+                    st.session_state.target_den = den
+                    st.toast(f"Loaded {num} / {den} into Explorer!", icon="🚀")
+                    st.rerun()
+                if c2.button("❌", key=f"fav_del_{idx}", use_container_width=True):
+                    st.session_state.fav_ratios.remove((num, den))
+                    st.rerun()
+
     with col_main:
-        macro_tabs = st.tabs(["🇮🇳 NSE Sectors", "🇺🇸 US Markets", "🌍 Global Assets"])
+        macro_tabs = st.tabs(["🇮🇳 NSE", "🇺🇸 US", "🌍 Global", "🕒 Recent"])
         
         with macro_tabs[0]:
-            nse_list = ["Nifty Bank", "Nifty IT", "Nifty Auto", "Nifty Pharma", "Nifty Metal", "Nifty Energy"]
-            cols = st.columns(3)
+            nse_list = ["Nifty Bank", "Nifty IT", "Nifty Auto", "Nifty Pharma"]
+            cols = st.columns(2)
             for idx, sec in enumerate(nse_list):
-                with cols[idx % 3], st.container(border=True):
+                with cols[idx % 2], st.container(border=True):
                     head1, head2, head3 = st.columns([6, 1.5, 1.5])
                     head1.markdown(f"**{sec}**")
                     if head2.button("⛶", key=f"btn_mod_nse_{idx}", help="Full Screen"): expand_chart_modal(sec, "Broad Market 500 (IND)")
                     if head3.button("🔍", key=f"btn_exp_nse_{idx}", help="Analyze in Explorer"):
                         st.session_state.target_num = sec
                         st.session_state.target_den = "Broad Market 500 (IND)"
-                        st.toast(f"Loaded {sec} / Broad Market 500 into Explorer! 🚀", icon="✅")
                         st.rerun()
                     fig = render_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
                     if fig: st.plotly_chart(fig, use_container_width=True, key=f"nse_c_{idx}", config=STATIC_CONFIG)
                         
         with macro_tabs[1]:
-            us_list = ["Nasdaq 100", "Russell 2000", "US Tech ETF", "US Fin ETF", "US Healthcare ETF", "US Energy ETF"]
-            cols = st.columns(3)
+            us_list = ["Nasdaq 100", "Russell 2000", "US Tech ETF", "US Healthcare ETF"]
+            cols = st.columns(2)
             for idx, sec in enumerate(us_list):
-                with cols[idx % 3], st.container(border=True):
+                with cols[idx % 2], st.container(border=True):
                     head1, head2, head3 = st.columns([6, 1.5, 1.5])
                     head1.markdown(f"**{sec}**")
                     if head2.button("⛶", key=f"btn_mod_us_{idx}", help="Full Screen"): expand_chart_modal(sec, "S&P 500")
                     if head3.button("🔍", key=f"btn_exp_us_{idx}", help="Analyze in Explorer"):
                         st.session_state.target_num = sec
                         st.session_state.target_den = "S&P 500"
-                        st.toast(f"Loaded {sec} / S&P 500 into Explorer! 🚀", icon="✅")
                         st.rerun()
                     fig = render_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
                     if fig: st.plotly_chart(fig, use_container_width=True, key=f"us_c_{idx}", config=STATIC_CONFIG)
@@ -596,10 +592,26 @@ with tab1:
                     if head3.button("🔍", key=f"btn_exp_glb_{idx}", help="Analyze in Explorer"):
                         st.session_state.target_num = num
                         st.session_state.target_den = den
-                        st.toast(f"Loaded {num} / {den} into Explorer! 🚀", icon="✅")
                         st.rerun()
                     fig = render_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=240)
                     if fig: st.plotly_chart(fig, use_container_width=True, key=f"glb_c_{idx}", config=STATIC_CONFIG)
+                    
+        with macro_tabs[3]:
+            st.caption("Your most recently analyzed charts")
+            if not st.session_state.recent_ratios: st.info("No recent charts. Analyze ratios in the Dynamic Explorer to see them here.")
+            else:
+                cols = st.columns(2)
+                for idx, (num, den) in enumerate(st.session_state.recent_ratios):
+                    with cols[idx % 2], st.container(border=True):
+                        h1, h2, h3 = st.columns([6, 1.5, 1.5])
+                        h1.markdown(f"**{num}** / {den}" if den != "None" else f"**{num}**")
+                        if h2.button("⛶", key=f"rec_mod_{idx}", help="Full Screen"): expand_chart_modal(num, den)
+                        if h3.button("🔍", key=f"rec_exp_{idx}", help="Analyze in Explorer"):
+                            st.session_state.target_num = num
+                            st.session_state.target_den = den
+                            st.rerun()
+                        fig = render_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
+                        if fig: st.plotly_chart(fig, use_container_width=True, key=f"rec_c_{idx}", config=STATIC_CONFIG)
 
     with col_news:
         render_watchlist(key_prefix="tab1")
@@ -611,22 +623,27 @@ with tab2:
     col_dyn_main, col_dyn_news = st.columns([3, 1]) 
     
     with col_dyn_main:
-        c1, c2 = st.columns([4, 1])
+        c1, c2, c3 = st.columns([3, 1, 1])
         
-        if selected_asset_name != "None":
-            tkr = st.session_state.asset_dict[selected_asset_name]
+        current_pair = (st.session_state.target_num, st.session_state.target_den)
+        if current_pair in st.session_state.recent_ratios: st.session_state.recent_ratios.remove(current_pair)
+        st.session_state.recent_ratios.insert(0, current_pair)
+        st.session_state.recent_ratios = st.session_state.recent_ratios[:6]
+        
+        if st.session_state.target_num != "None":
+            tkr = st.session_state.asset_dict[st.session_state.target_num]
             data = fetch_yahoo_data(tkr, "5d", "1d")
-            curr = CURRENCY_MAP.get(selected_asset_name, "")
+            curr = CURRENCY_MAP.get(st.session_state.target_num, "")
             if data is not None and not data.empty and len(data) >= 2:
                 last_px, prev_px = data['Close'].iloc[-1], data['Close'].iloc[-2]
                 pct_chg = ((last_px - prev_px) / prev_px) * 100
                 clr = "#089981" if pct_chg >= 0 else "#f23645"
                 sgn = "+" if pct_chg >= 0 else ""
                 
-                header_title = f"{selected_asset_name} / {benchmark_name}" if benchmark_name != "None" else f"{selected_asset_name}"
+                header_title = f"{st.session_state.target_num} / {st.session_state.target_den}" if st.session_state.target_den != "None" else f"{st.session_state.target_num}"
                 c1.markdown(f"<h3 style='margin-bottom:0;'>{header_title} &nbsp;<span style='color:{clr}; font-size:1.3rem;'>{curr}{last_px:,.2f} ({sgn}{pct_chg:.2f}%)</span></h3>", unsafe_allow_html=True)
                 
-                if benchmark_name == "None":
+                if st.session_state.target_den == "None":
                     funds = fetch_fundamentals(tkr)
                     if funds:
                         st.markdown(f"""
@@ -638,21 +655,27 @@ with tab2:
                             <div><span class='tear-val'>Div Yield:</span> {funds['Div Yield']}</div>
                         </div>
                         """, unsafe_allow_html=True)
-            else: c1.subheader(f"{selected_asset_name}")
+            else: c1.subheader(f"{st.session_state.target_num}")
         else: c1.subheader("No Assets Selected")
         
         with c2:
-            if st.button("🗑️ Clear All Charts & Drawings", use_container_width=True): st.rerun()
+            if st.button("⭐ Save Ratio", use_container_width=True):
+                if current_pair not in st.session_state.fav_ratios:
+                    st.session_state.fav_ratios.append(current_pair)
+                    st.toast(f"Saved {current_pair[0]} / {current_pair[1]} to Favorites!", icon="✅")
+        with c3:
+            if st.button("🗑️ Clear Screen", use_container_width=True): st.rerun()
 
+        st.caption("💡 *Tip: To erase a specific line, click the Eraser icon then click the line, or select the line and press the Delete key.*")
         with st.spinner("Rendering Chart..."), st.container(border=True):
-            fig = render_chart(selected_asset_name, benchmark_name, timeframe, interval_selection, chart_type, selected_overlays, selected_oscillators, show_vol=show_volume, analysis_mode=analysis_mode.split()[0], show_hud=True, show_rangeselector=True, height=700)
+            fig = render_chart(st.session_state.target_num, st.session_state.target_den, timeframe, interval_selection, chart_type, selected_overlays, selected_oscillators, show_vol=show_volume, analysis_mode=analysis_mode.split()[0], show_hud=True, show_rangeselector=True, height=700)
             if fig: st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
             
-        if selected_asset_name != "None":
+        if st.session_state.target_num != "None":
             with st.expander("📅 Historical Seasonality Matrix (Monthly % Returns)", expanded=False):
                 with st.spinner("Calculating Seasonality..."):
                     try:
-                        s_data = fetch_yahoo_data(st.session_state.asset_dict[selected_asset_name], "5y", "1d")
+                        s_data = fetch_yahoo_data(st.session_state.asset_dict[st.session_state.target_num], "5y", "1d")
                         if s_data is not None and not s_data.empty:
                             s_data['Year'] = s_data.index.year
                             s_data['Month'] = s_data.index.month
