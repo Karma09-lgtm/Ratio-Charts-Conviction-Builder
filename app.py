@@ -37,8 +37,6 @@ st.markdown("""
     .stButton > button:hover { border: 1px solid #2962FF; color: #2962FF; background-color: #f0f3fa;}
     .tear-sheet { font-size: 0.85rem; color: #787b86; display: flex; gap: 15px; margin-top: -10px; margin-bottom: 15px; padding: 10px; background: #f8f9fd; border-radius: 6px; border: 1px solid #e0e3eb;}
     .tear-val { font-weight: 700; color: #131722; }
-    
-    /* Social Share Button Styling */
     .share-btn { display: inline-block; padding: 8px 12px; margin-bottom: 8px; border-radius: 4px; background: #f8f9fd; border: 1px solid #e0e3eb; color: #131722; text-decoration: none; font-size: 0.9rem; font-weight: 600; width: 100%; text-align: left; transition: 0.2s;}
     .share-btn:hover { background: #f0f3fa; border-color: #2962FF; color: #2962FF;}
 </style>
@@ -103,19 +101,16 @@ if 'target_period' not in st.session_state: st.session_state.target_period = "1y
 # --- SIDEBAR: OMNIBOX & CONTROLS ---
 st.sidebar.title("⚙️ Terminal Setup")
 
-# 1. THE OMNIBOX (Command Line Engine with Go Button)
+# 1. THE OMNIBOX
 st.sidebar.markdown("**💻 Command Line**")
 with st.sidebar.form(key="omni_form", clear_on_submit=True):
     col_cmd, col_btn = st.columns([3, 1])
     with col_cmd:
         omni_cmd = st.text_input("Command", placeholder="e.g. Nifty / Gold 1y", label_visibility="collapsed")
     with col_btn:
-        # Submit triggers inherently when you hit the Enter key
         omni_submit = st.form_submit_button("Go ⚡", use_container_width=True)
-
 st.sidebar.caption("*Shortcut: Press **Enter** in the box to run.*")
 
-# Process Command and Force Immediate Rerun
 if omni_submit and omni_cmd:
     parts = omni_cmd.split('/')
     try:
@@ -145,10 +140,21 @@ if omni_submit and omni_cmd:
                 if tf in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: st.session_state.target_period = tf
         
         st.toast(f"Loaded: {st.session_state.target_num}", icon="🚀")
-        st.rerun() # Instantly sync dropdowns and chart
-    except Exception:
-        st.toast("Command error. Use format: Asset1 / Asset2 timeframe", icon="⚠️")
+        st.rerun() 
+    except Exception: st.toast("Command error. Use format: Asset1 / Asset2 timeframe", icon="⚠️")
 
+
+# 2. DATA & HISTORY MANAGEMENT (NEW FEATURE)
+with st.sidebar.expander("🧹 Data & History Management", expanded=False):
+    st.caption("Wipe local cache and force fresh data pull.")
+    del_timeframe = st.selectbox("Select History to Delete", ["Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time History"])
+    
+    if st.button("🗑️ Reset & Clear History", use_container_width=True):
+        # Clears backend data cache (forces all charts to redraw freshly)
+        st.cache_data.clear()
+        st.toast(f"Successfully cleared {del_timeframe} of cached history.", icon="✅")
+        time.sleep(0.5)
+        st.rerun()
 
 with st.sidebar.expander("📝 Watchlist Manager", expanded=False):
     new_wl_name = st.text_input("New Watchlist Name")
@@ -163,11 +169,8 @@ with st.sidebar.expander("📝 Watchlist Manager", expanded=False):
 
 st.sidebar.markdown("---")
 
-# 2. STATE-BOUND DROPDOWNS
 with st.sidebar.expander("⚙️ Asset Selection", expanded=True):
     asset_options = ["None"] + list(st.session_state.asset_dict.keys())
-    
-    # Bound explicitly to session keys so the Omnibox controls them remotely
     selected_asset_name = st.selectbox("Numerator (Asset 1)", asset_options, key="target_num") 
     benchmark_name = st.selectbox("Denominator (Asset 2)", asset_options, key="target_den") 
     analysis_mode = st.radio("Analysis Mode", ["Ratio", "Correlation (20d)"], horizontal=True)
@@ -175,7 +178,6 @@ with st.sidebar.expander("⚙️ Asset Selection", expanded=True):
 with st.sidebar.expander("⏱️ Time & Style", expanded=True):
     c1, c2 = st.columns(2)
     tf_options = ("1mo", "3mo", "6mo", "1y", "2y", "5y", "max")
-    
     with c1: timeframe = st.selectbox("Data Fetch", tf_options, key="target_period")
     with c2: interval_selection = st.selectbox("Interval", ("1d", "1wk", "1mo"))
     chart_type = st.selectbox("Style", ("Candlestick", "Bar (OHLC)", "Line"))
@@ -289,13 +291,13 @@ TV_CONFIG = {
     'displayModeBar': True, 
     'displaylogo': False, 
     'scrollZoom': True,
-    'toImageButtonOptions': {
-        'format': 'png', 
-        'filename': 'Macro_Conviction_Builder_Chart',
-        'height': 900, 'width': 1600, 'scale': 2 # Outputs 4K PNGs
-    }
+    'toImageButtonOptions': {'format': 'png', 'filename': 'Macro_Conviction_Builder_Chart', 'height': 900, 'width': 1600, 'scale': 2 }
 }
-STATIC_CONFIG = {'displayModeBar': False, 'scrollZoom': False}
+# Upgraded STATIC CONFIG: It now supports zooming, panning, and drawing tools just like TV_CONFIG
+STATIC_CONFIG = {
+    'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape'],
+    'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True
+}
 
 def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol=True, analysis_mode="Ratio", show_hud=True, show_rangeselector=True, height=650):
     if num_name == "None" and den_name == "None": return None
