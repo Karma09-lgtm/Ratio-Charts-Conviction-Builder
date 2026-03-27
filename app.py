@@ -15,29 +15,46 @@ start_time = time.time()
 # --- PREMIUM TRADINGVIEW LIGHT-THEME CSS ---
 st.markdown("""
 <style>
-    .stApp { background-color: #ffffff; color: #131722; font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif; }
+    .stApp { background-color: #f8f9fd; color: #131722; font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
+    
+    /* Elegant Containers & Cards */
     [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
-        background-color: #ffffff; border-radius: 6px; border: 1px solid #e0e3eb; padding: 12px; box-shadow: 0px 2px 4px rgba(0,0,0,0.02);
+        background-color: #ffffff; border-radius: 8px; border: 1px solid #e0e3eb; padding: 12px; box-shadow: 0px 2px 4px rgba(19, 23, 34, 0.03);
     }
-    .stTabs [data-baseweb="tab-list"] { background-color: #ffffff; border-bottom: 2px solid #e0e3eb; gap: 10px; }
-    .stTabs [data-baseweb="tab"] { color: #787b86; padding: 10px 15px; font-weight: 600; }
+    
+    /* Tabs Styling */
+    .stTabs [data-baseweb="tab-list"] { background-color: transparent; border-bottom: 2px solid #e0e3eb; gap: 20px; }
+    .stTabs [data-baseweb="tab"] { color: #787b86; padding: 10px 5px; font-weight: 600; font-size: 1rem; }
     .stTabs [aria-selected="true"] { color: #2962FF !important; border-bottom: 2px solid #2962FF !important; }
-    [data-testid="stMetricValue"] { font-size: 1.4rem !important; font-weight: 700; color: #131722; margin-top: -10px;}
+    
+    /* Metric Styling Overrides for Ticker Tape - Tighter Spacing */
+    [data-testid="stMetricValue"] { font-size: 1.35rem !important; font-weight: 700; color: #131722; margin-top: -15px;}
+    [data-testid="stMetricDelta"] { margin-top: -5px; }
     [data-testid="stMetricDelta"] svg { display: none; }
+    
+    /* Clean Watchlist - Hide Checkboxes but keep row selection */
     [data-testid="stDataFrame"] { border: none !important; }
     [data-testid="stDataFrame"] div[data-testid="stCheckbox"] { display: none !important; }
+    
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #f0f3fa; }
     ::-webkit-scrollbar-thumb { background: #c1c4cd; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #a1a5af; }
+    
     h1, h2, h3, h4, h5, h6 { color: #131722 !important; font-weight: 600 !important; }
     hr { border-color: #e0e3eb; margin-top: 10px; margin-bottom: 10px;}
-    .stButton > button { border: 1px solid #e0e3eb; background-color: transparent; color: #787b86; transition: 0.2s; width: 100%; border-radius: 4px; padding: 4px 8px;}
+    
+    /* Subtle Action Button Styling */
+    .stButton > button { border: 1px solid #e0e3eb; background-color: #ffffff; color: #787b86; transition: 0.2s; width: 100%; border-radius: 6px; padding: 4px 8px; font-weight: 500;}
     .stButton > button:hover { border: 1px solid #2962FF; color: #2962FF; background-color: #f0f3fa;}
+    
+    /* Disabled Button Styling (For the "Saved" State) */
+    .stButton > button:disabled { border: 1px solid #e0e3eb; background-color: #f8f9fd; color: #089981; font-weight: 600; opacity: 1; }
+    
     .tear-sheet { font-size: 0.85rem; color: #787b86; display: flex; gap: 15px; margin-top: -10px; margin-bottom: 15px; padding: 10px; background: #f8f9fd; border-radius: 6px; border: 1px solid #e0e3eb;}
     .tear-val { font-weight: 700; color: #131722; }
-    .share-btn { display: inline-block; padding: 8px 12px; margin-bottom: 8px; border-radius: 4px; background: #f8f9fd; border: 1px solid #e0e3eb; color: #131722; text-decoration: none; font-size: 0.9rem; font-weight: 600; width: 100%; text-align: left; transition: 0.2s;}
+    .share-btn { display: inline-block; padding: 8px 12px; margin-bottom: 8px; border-radius: 4px; background: #ffffff; border: 1px solid #e0e3eb; color: #131722; text-decoration: none; font-size: 0.9rem; font-weight: 600; width: 100%; text-align: left; transition: 0.2s;}
     .share-btn:hover { background: #f0f3fa; border-color: #2962FF; color: #2962FF;}
 </style>
 """, unsafe_allow_html=True)
@@ -54,7 +71,7 @@ with c_export:
         st.markdown("<a href='mailto:?subject=Macro Terminal Analysis&body=Check out this advanced macro conviction dashboard setup.' target='_blank' class='share-btn'>✉️ &nbsp; Email Colleague</a>", unsafe_allow_html=True)
         st.markdown("---")
         st.markdown("**📸 High-Res Screenshots**")
-        st.caption("Hover over any interactive chart and click the **Camera Icon** in the top-right toolbar to download a **4K Resolution (1600x900) PNG**.")
+        st.caption("Hover over any interactive chart and click the **Camera Icon** in the top-right toolbar. The engine is configured to automatically download a clean, **4K Resolution (1600x900) PNG** of your analysis.")
 
 # --- CURRENCY MAPPING ENGINE ---
 CURRENCY_MAP = {
@@ -96,9 +113,9 @@ if 'target_num' not in st.session_state: st.session_state.target_num = "S&P 500"
 if 'target_den' not in st.session_state: st.session_state.target_den = "None"
 if 'target_period' not in st.session_state: st.session_state.target_period = "1y"
 
-# NEW: Favorites and Recent Trackers
 if 'fav_ratios' not in st.session_state: st.session_state.fav_ratios = [("Gold (Spot)", "S&P 500"), ("Nasdaq 100", "Russell 2000")]
 if 'recent_ratios' not in st.session_state: st.session_state.recent_ratios = []
+
 
 # --- SIDEBAR: OMNIBOX & CONTROLS ---
 st.sidebar.title("⚙️ Terminal Setup")
@@ -116,16 +133,20 @@ if omni_submit and omni_cmd:
     parts = omni_cmd.split('/')
     try:
         if len(parts) == 2:
-            num_part, den_part_split = parts[0].strip(), parts[1].strip().rsplit(' ', 1)
+            num_part = parts[0].strip()
+            den_part_split = parts[1].strip().rsplit(' ', 1)
             den_part = den_part_split[0]
+            
             matched_num = next((k for k in st.session_state.asset_dict.keys() if num_part.lower() in k.lower()), None)
             matched_den = next((k for k in st.session_state.asset_dict.keys() if den_part.lower() in k.lower()), None)
             
             if matched_num: st.session_state.target_num = matched_num
             if matched_den: st.session_state.target_den = matched_den
+            
             if len(den_part_split) > 1:
                 tf = den_part_split[1].lower()
-                if tf in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: st.session_state.target_period = tf
+                valid_tfs = ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]
+                if tf in valid_tfs: st.session_state.target_period = tf
         else:
             num_part_split = parts[0].strip().rsplit(' ', 1)
             matched_num = next((k for k in st.session_state.asset_dict.keys() if num_part_split[0].lower() in k.lower()), None)
@@ -135,6 +156,7 @@ if omni_submit and omni_cmd:
             if len(num_part_split) > 1:
                 tf = num_part_split[1].lower()
                 if tf in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: st.session_state.target_period = tf
+        
         st.toast(f"Loaded: {st.session_state.target_num}", icon="🚀")
         st.rerun() 
     except Exception: st.toast("Command error. Use format: Asset1 / Asset2 timeframe", icon="⚠️")
@@ -513,9 +535,13 @@ with tab1:
                     
                     with cols_top[col_idx]:
                         with st.container(border=True):
-                            c_title, c_btn = st.columns([4,1])
+                            c_title, c_mod, c_exp = st.columns([5, 2, 2])
                             c_title.markdown(f"<div style='font-size:0.85rem; font-weight:600; color:#787b86; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{idx_name}</div>", unsafe_allow_html=True)
-                            if c_btn.button("⛶", key=f"top_exp_{idx_name}", help="Expand Chart"): expand_chart_modal(idx_name, "None")
+                            if c_mod.button("⛶", key=f"top_mod_{idx_name}", help="Full Screen"): expand_chart_modal(idx_name, "None")
+                            if c_exp.button("🔍", key=f"top_exp_{idx_name}", help="Analyze in Explorer"):
+                                st.session_state.target_num = idx_name
+                                st.session_state.target_den = "None"
+                                st.rerun()
                                 
                             data = fetch_yahoo_data(ticker, "5d", "1d")
                             if data is not None and not data.empty and len(data) >= 2:
@@ -528,7 +554,7 @@ with tab1:
                     
     st.markdown("---")
     
-    # --- NEW LEFT PANEL FOR FAVORITES & RECENTS ---
+    # --- LEFT PANEL FOR FAVORITES & RECENTS ---
     col_left, col_main, col_news = st.columns([2, 5, 2.5]) 
     
     with col_left:
@@ -542,7 +568,6 @@ with tab1:
                 if c1.button("🔍 Load", key=f"fav_load_{idx}", use_container_width=True):
                     st.session_state.target_num = num
                     st.session_state.target_den = den
-                    st.toast(f"Loaded {num} / {den} into Explorer!", icon="🚀")
                     st.rerun()
                 if c2.button("❌", key=f"fav_del_{idx}", use_container_width=True):
                     st.session_state.fav_ratios.remove((num, den))
@@ -659,10 +684,13 @@ with tab2:
         else: c1.subheader("No Assets Selected")
         
         with c2:
-            if st.button("⭐ Save Ratio", use_container_width=True):
-                if current_pair not in st.session_state.fav_ratios:
-                    st.session_state.fav_ratios.append(current_pair)
-                    st.toast(f"Saved {current_pair[0]} / {current_pair[1]} to Favorites!", icon="✅")
+            is_saved = current_pair in st.session_state.fav_ratios
+            btn_label = "✅ Saved" if is_saved else "⭐ Save Ratio"
+            if st.button(btn_label, disabled=is_saved, use_container_width=True):
+                st.session_state.fav_ratios.append(current_pair)
+                st.toast(f"Saved {current_pair[0]} to Favorites!", icon="✅")
+                st.rerun()
+                
         with c3:
             if st.button("🗑️ Clear Screen", use_container_width=True): st.rerun()
 
