@@ -33,7 +33,7 @@ st.markdown("""
     ::-webkit-scrollbar-thumb:hover { background: #a1a5af; }
     h1, h2, h3, h4, h5, h6 { color: #131722 !important; font-weight: 600 !important; }
     hr { border-color: #e0e3eb; margin-top: 10px; margin-bottom: 10px;}
-    .stButton > button { border: 1px solid #e0e3eb; background-color: transparent; color: #787b86; transition: 0.2s; width: 100%; border-radius: 4px;}
+    .stButton > button { border: 1px solid #e0e3eb; background-color: transparent; color: #787b86; transition: 0.2s; width: 100%; border-radius: 4px; padding: 4px 8px;}
     .stButton > button:hover { border: 1px solid #2962FF; color: #2962FF; background-color: #f0f3fa;}
     .tear-sheet { font-size: 0.85rem; color: #787b86; display: flex; gap: 15px; margin-top: -10px; margin-bottom: 15px; padding: 10px; background: #f8f9fd; border-radius: 6px; border: 1px solid #e0e3eb;}
     .tear-val { font-weight: 700; color: #131722; }
@@ -96,11 +96,9 @@ if 'target_num' not in st.session_state: st.session_state.target_num = "S&P 500"
 if 'target_den' not in st.session_state: st.session_state.target_den = "None"
 if 'target_period' not in st.session_state: st.session_state.target_period = "1y"
 
-
 # --- SIDEBAR: OMNIBOX & CONTROLS ---
 st.sidebar.title("⚙️ Terminal Setup")
 
-# 1. THE OMNIBOX
 st.sidebar.markdown("**💻 Command Line**")
 with st.sidebar.form(key="omni_form", clear_on_submit=True):
     col_cmd, col_btn = st.columns([3, 1])
@@ -142,14 +140,12 @@ if omni_submit and omni_cmd:
         st.rerun() 
     except Exception: st.toast("Command error. Use format: Asset1 / Asset2 timeframe", icon="⚠️")
 
-
-# --- NEW DRAWING TOOLBOX ---
 with st.sidebar.expander("🎨 Custom Drawing Toolbox", expanded=True):
     st.caption("Customize your trendlines before drawing them on the chart.")
     c_color, c_width = st.columns([1, 2])
     with c_color: draw_color = st.color_picker("Line Color", "#2962FF")
     with c_width: draw_width = st.slider("Line Thickness", 1, 5, 2)
-    st.info("💡 **To Draw Horizontal Lines:** Select the Trendline tool and draw straight across.\n\n💡 **To Delete:** Select a line and press `Delete` on your keyboard, or click the Eraser icon.")
+    st.info("💡 **To Delete:** Select a line and press `Delete` on your keyboard, or click the Eraser icon.")
 
 with st.sidebar.expander("🧹 Data & History Management", expanded=False):
     st.caption("Wipe local cache and force fresh data pull.")
@@ -287,11 +283,11 @@ def fetch_market_news(keyword="None"):
         except: continue
     return news_items[:15]
 
-
 # --- TRADINGVIEW CHART ENGINE WITH ENHANCED DRAWING CAPABILITIES ---
 TV_CONFIG = {
     'modeBarButtonsToAdd': [
-        'drawline', 'drawopenpath', 'drawclosedpath', 'drawcircle', 'drawrect', 'eraseshape'
+        'drawline', 'drawhline', 'drawvline', 
+        'drawopenpath', 'drawclosedpath', 'drawcircle', 'drawrect', 'eraseshape'
     ],
     'displayModeBar': True, 
     'displaylogo': False, 
@@ -300,7 +296,7 @@ TV_CONFIG = {
 }
 
 STATIC_CONFIG = {
-    'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape'],
+    'modeBarButtonsToAdd': ['drawline', 'drawhline', 'drawrect', 'eraseshape'],
     'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True
 }
 
@@ -410,13 +406,11 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
                 hud_text += f" &nbsp; <span style='color:{colors.get(ind, '#000')}'><b>{ind}:</b> {df[ind].iloc[-1]:{dec}}</span>"
         fig.add_annotation(xref="x domain", yref="y domain", x=0.01, y=0.99, text=hud_text, showarrow=False, font=dict(size=11, color="#131722"), align="left", bgcolor="rgba(255,255,255,0.7)", row=1, col=1)
 
-    # DYNAMIC DRAWING TOOLBOX INTEGRATION
     fig.update_layout(
         template="plotly_white", plot_bgcolor=BG, paper_bgcolor=BG, xaxis_rangeslider_visible=False, height=height, 
         margin=dict(l=10, r=45, t=10, b=10), showlegend=False, hovermode="x unified", dragmode="pan", 
         font=dict(color="#131722", size=11),
-        # This ties the Plotly drawing engine to the Streamlit Sidebar colors!
-        newshape=dict(line_color=draw_color, line_width=draw_width)
+        newshape=dict(line_color=st.session_state.get('draw_color', '#2962FF'), line_width=st.session_state.get('draw_width', 2))
     )
     
     x_format, d_tick = ("%d %b %Y", None) if period_str in ["1mo", "3mo", "6mo"] else ("%b %Y", "M1" if period_str == "1y" else "M3")
@@ -437,9 +431,9 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
 def expand_chart_modal(num_name, den_name):
     title = f"{num_name}" if den_name == "None" else f"{num_name} / {den_name}"
     st.markdown(f"### {title}")
-    st.caption("💡 *Tip: Double-click the chart background to reset the zoom scale.*")
+    st.caption("💡 *Tip: Click the Streamlit double-arrow icon [↙️↗️] in the top-right corner to enter absolute full-screen mode.*")
     with st.spinner("Loading High-Res Interactive Engine..."):
-        fig = render_chart(num_name, den_name, "max", "1d", "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], show_hud=True, show_rangeselector=True, height=650)
+        fig = render_chart(num_name, den_name, "max", "1d", "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], show_hud=True, show_rangeselector=True, height=800)
         if fig: st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
 
 # --- REUSABLE PANELS ---
@@ -520,9 +514,9 @@ with tab1:
                     
                     with cols_top[col_idx]:
                         with st.container(border=True):
-                            c_title, c_btn = st.columns([4,1])
-                            c_title.markdown(f"<div style='font-size:0.85rem; font-weight:600; color:#787b86;'>{idx_name}</div>", unsafe_allow_html=True)
-                            if c_btn.button("⛶", key=f"top_exp_{idx_name}", help="Expand Chart"): expand_chart_modal(idx_name, "None")
+                            c_title, c_btn = st.columns([3, 2])
+                            c_title.markdown(f"<div style='font-size:0.85rem; font-weight:600; color:#787b86; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{idx_name}</div>", unsafe_allow_html=True)
+                            if c_btn.button("⛶ Full", key=f"top_exp_{idx_name}", help="Open Full Screen Interactive Chart"): expand_chart_modal(idx_name, "None")
                                 
                             data = fetch_yahoo_data(ticker, "5d", "1d")
                             if data is not None and not data.empty and len(data) >= 2:
@@ -544,9 +538,9 @@ with tab1:
             cols = st.columns(3)
             for idx, sec in enumerate(nse_list):
                 with cols[idx % 3], st.container(border=True):
-                    head1, head2 = st.columns([4, 1])
+                    head1, head2 = st.columns([4, 2])
                     head1.markdown(f"**{sec}**")
-                    if head2.button("⛶", key=f"btn_nse_{idx}"): expand_chart_modal(sec, "Broad Market 500 (IND)")
+                    if head2.button("⛶ Full", key=f"btn_nse_{idx}"): expand_chart_modal(sec, "Broad Market 500 (IND)")
                     fig = render_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
                     if fig: st.plotly_chart(fig, use_container_width=True, key=f"nse_c_{idx}", config=STATIC_CONFIG)
                         
@@ -555,9 +549,9 @@ with tab1:
             cols = st.columns(3)
             for idx, sec in enumerate(us_list):
                 with cols[idx % 3], st.container(border=True):
-                    head1, head2 = st.columns([4, 1])
+                    head1, head2 = st.columns([4, 2])
                     head1.markdown(f"**{sec}**")
-                    if head2.button("⛶", key=f"btn_us_{idx}"): expand_chart_modal(sec, "S&P 500")
+                    if head2.button("⛶ Full", key=f"btn_us_{idx}"): expand_chart_modal(sec, "S&P 500")
                     fig = render_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
                     if fig: st.plotly_chart(fig, use_container_width=True, key=f"us_c_{idx}", config=STATIC_CONFIG)
 
@@ -566,9 +560,9 @@ with tab1:
             cols = st.columns(2)
             for idx, (num, den, title) in enumerate(macro_pairs):
                 with cols[idx % 2], st.container(border=True):
-                    head1, head2 = st.columns([6, 1])
+                    head1, head2 = st.columns([5, 2])
                     head1.markdown(f"**{title}**<br>({num} / {den})", unsafe_allow_html=True)
-                    if head2.button("⛶", key=f"btn_glb_{idx}"): expand_chart_modal(num, den)
+                    if head2.button("⛶ Full", key=f"btn_glb_{idx}"): expand_chart_modal(num, den)
                     fig = render_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=240)
                     if fig: st.plotly_chart(fig, use_container_width=True, key=f"glb_c_{idx}", config=STATIC_CONFIG)
 
@@ -613,10 +607,9 @@ with tab2:
         else: c1.subheader("No Assets Selected")
         
         with c2:
-            if st.button("🗑️ Clear Charts & Cache", use_container_width=True): 
-                st.cache_data.clear()
-                st.rerun()
+            if st.button("🗑️ Clear All Charts & Drawings", use_container_width=True): st.rerun()
 
+        st.caption("💡 *Tip: To erase a specific line, click the Eraser icon then click the line, or select the line and press the Delete key.*")
         with st.spinner("Rendering Chart..."), st.container(border=True):
             fig = render_chart(selected_asset_name, benchmark_name, timeframe, interval_selection, chart_type, selected_overlays, selected_oscillators, show_vol=show_volume, analysis_mode=analysis_mode.split()[0], show_hud=True, show_rangeselector=True, height=700)
             if fig: st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
