@@ -91,6 +91,11 @@ if 'target_period' not in st.session_state: st.session_state.target_period = "1y
 if 'fav_ratios' not in st.session_state: st.session_state.fav_ratios = [("Gold (Spot)", "S&P 500"), ("Nasdaq 100", "Russell 2000")]
 if 'recent_ratios' not in st.session_state: st.session_state.recent_ratios = []
 
+# Dynamic Layout States
+if 'show_ticker' not in st.session_state: st.session_state.show_ticker = True
+if 'show_fav' not in st.session_state: st.session_state.show_fav = True
+if 'show_news' not in st.session_state: st.session_state.show_news = True
+
 # --- SIDEBAR CONTROLS ---
 st.sidebar.title("⚙️ Terminal Setup")
 
@@ -125,6 +130,12 @@ if omni_submit and omni_cmd:
         st.toast(f"Loaded: {st.session_state.target_num}", icon="🚀")
         st.rerun() 
     except Exception: pass
+
+with st.sidebar.expander("🧩 Layout Manager", expanded=False):
+    st.caption("Toggle sections to free up screen real estate.")
+    st.session_state.show_ticker = st.checkbox("Show Top Ticker Tape", value=st.session_state.show_ticker)
+    st.session_state.show_fav = st.checkbox("Show Favorites (Left Panel)", value=st.session_state.show_fav)
+    st.session_state.show_news = st.checkbox("Show Watchlist/News (Right Panel)", value=st.session_state.show_news)
 
 with st.sidebar.expander("🧹 Data & History Management", expanded=False):
     del_timeframe = st.selectbox("Select History to Delete", ["Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time History"])
@@ -213,13 +224,7 @@ def fetch_yahoo_data(ticker, period, interval):
         if data.empty: return None
         if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
         data = data.loc[:, ~data.columns.duplicated()]
-        
-        # --- CRITICAL FIX: Normalize index to prevent merge mismatches ---
-        if data.index.tz is not None:
-            data.index = data.index.tz_convert(None)
-        if interval in ['1d', '1wk', '1mo']:
-            data.index = data.index.normalize()
-        data = data[~data.index.duplicated(keep='last')].sort_index()
+        data.index = data.index.tz_localize(None) 
         return data
     except: return None
 
@@ -263,6 +268,7 @@ def fetch_market_news(keyword="None"):
         except: continue
     return news[:10]
 
+
 # --- UNIVERSAL TRADINGVIEW ENGINE ---
 def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol, analysis_mode, draw_color="#2962FF", draw_width=2, show_hud=True, base_height=500, enable_drawing=False):
     if num_name == "None" and den_name == "None": 
@@ -282,8 +288,6 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
         if 'Volume' in base_df.columns: den_data['Volume'] = 1
 
     df = pd.merge(num_data, den_data, left_index=True, right_index=True, suffixes=('_num', '_den'))
-    
-    # STRICT STERILIZATION 
     df = df.ffill().bfill() 
     df = df[~df.index.duplicated(keep='first')].sort_index()
 
@@ -319,7 +323,6 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
             df['Peak'] = df['Ratio_Close'].cummax()
             df['Drawdown'] = ((df['Ratio_Close'] - df['Peak']) / df['Peak']) * 100
 
-    # SAFE JSON EXPORT 
     if analysis_mode == "Correlation" or c_type == "Line":
         temp = df[['Ratio_Close']].dropna()
         main_data = [{"time": d.strftime('%Y-%m-%d'), "value": float(row['Ratio_Close'])} for d, row in temp.iterrows()]
@@ -364,7 +367,6 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
     hud_display = "block" if show_hud else "none"
     title_text = f"{num_name}" + (f" / {den_name}" if den_name != "None" else "")
 
-    # Inject custom HTML5 Drawing Layer with H-RAY
     drawing_html = ""
     drawing_js = ""
     if enable_drawing:
@@ -618,7 +620,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
             .chart-container {{ width: 100%; height: 100vh; display: flex; flex-direction: column; position: relative; background: #fff; }}
             .pane {{ width: 100%; }}
             #main-chart-wrapper {{ position: relative; flex-grow: 1; height: {base_height}px; width: 100%; }}
-            #main-chart {{ height: {base_height}px; width: 100%; }}
+            #main-chart {{ height: 100%; width: 100%; }}
             .sub-chart {{ height: 160px; border-top: 1px solid #e0e3eb; flex-shrink: 0; }}
             .error-box {{ padding: 20px; color: #f23645; text-align: center; border: 1px solid #e0e3eb; border-radius: 6px; margin: 20px; background: #fffafb; }}
             #tv-legend {{ position: absolute; left: 12px; top: 12px; z-index: 100; font-size: 13px; font-weight: 500; color: #131722; background: rgba(255,255,255,0.85); padding: 6px 10px; border-radius: 4px; pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: {hud_display}; }}
@@ -786,61 +788,77 @@ def expand_chart_modal(num_name, den_name):
 tab1, tab2, tab3 = st.tabs(["🖥️ Macro Overview", "🔍 Dynamic Explorer", "🧮 Correlation Matrix"])
 
 with tab1:
-    st.subheader("🌐 Live Global Markets")
-    top_indices = ["S&P 500", "Nasdaq 100", "DAX", "FTSE 100", "STOXX 50", "Nikkei 225", "ASX 200", "Nifty 50", "Gold (Spot)", "Crude Oil", "Bitcoin", "US 20+ Yr Treasury"]
+    if st.session_state.show_ticker:
+        st.subheader("🌐 Live Global Markets")
+        top_indices = ["S&P 500", "Nasdaq 100", "DAX", "FTSE 100", "STOXX 50", "Nikkei 225", "ASX 200", "Nifty 50", "Gold (Spot)", "Crude Oil", "Bitcoin", "US 20+ Yr Treasury"]
+        
+        with st.spinner("Syncing Global Markets..."):
+            for row in range(0, len(top_indices), 6):
+                cols_top = st.columns(6)
+                for col_idx in range(6):
+                    idx = row + col_idx
+                    if idx < len(top_indices):
+                        idx_name = top_indices[idx]
+                        ticker = st.session_state.asset_dict[idx_name]
+                        curr = CURRENCY_MAP.get(idx_name, "")
+                        
+                        with cols_top[col_idx]:
+                            with st.container(border=True):
+                                c_title, c_mod, c_exp = st.columns([5, 2, 2])
+                                c_title.markdown(f"<div style='font-size:0.85rem; font-weight:600; color:#787b86; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{idx_name}</div>", unsafe_allow_html=True)
+                                if c_mod.button("⛶", key=f"top_mod_{idx_name}", help="Expand Chart"): expand_chart_modal(idx_name, "None")
+                                if c_exp.button("🔍", key=f"top_exp_{idx_name}", help="Analyze in Explorer"):
+                                    st.session_state.target_num = idx_name
+                                    st.session_state.target_den = "None"
+                                    st.rerun()
+                                    
+                                data = fetch_yahoo_data(ticker, "5d", "1d")
+                                if data is not None and not data.empty and len(data) >= 2:
+                                    try:
+                                        last_close, prev_close = float(data['Close'].iloc[-1]), float(data['Close'].iloc[-2])
+                                        pct_change = ((last_close - prev_close) / prev_close) * 100
+                                        st.metric(label="val", value=f"{curr}{last_close:,.2f}", delta=f"{pct_change:.2f}%", label_visibility="collapsed")
+                                    except: st.metric(label="val", value="Error", label_visibility="collapsed")
+                                else: st.metric(label="val", value="N/A", label_visibility="collapsed")
+                        
+        st.markdown("---")
     
-    with st.spinner("Syncing Global Markets..."):
-        for row in range(0, len(top_indices), 6):
-            cols_top = st.columns(6)
-            for col_idx in range(6):
-                idx = row + col_idx
-                if idx < len(top_indices):
-                    idx_name = top_indices[idx]
-                    ticker = st.session_state.asset_dict[idx_name]
-                    curr = CURRENCY_MAP.get(idx_name, "")
-                    
-                    with cols_top[col_idx]:
-                        with st.container(border=True):
-                            c_title, c_mod, c_exp = st.columns([5, 2, 2])
-                            c_title.markdown(f"<div style='font-size:0.85rem; font-weight:600; color:#787b86; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{idx_name}</div>", unsafe_allow_html=True)
-                            if c_mod.button("⛶", key=f"top_mod_{idx_name}", help="Expand Chart"): expand_chart_modal(idx_name, "None")
-                            if c_exp.button("🔍", key=f"top_exp_{idx_name}", help="Analyze in Explorer"):
-                                st.session_state.target_num = idx_name
-                                st.session_state.target_den = "None"
-                                st.rerun()
-                                
-                            data = fetch_yahoo_data(ticker, "5d", "1d")
-                            if data is not None and not data.empty and len(data) >= 2:
-                                try:
-                                    last_close, prev_close = float(data['Close'].iloc[-1]), float(data['Close'].iloc[-2])
-                                    pct_change = ((last_close - prev_close) / prev_close) * 100
-                                    st.metric(label="val", value=f"{curr}{last_close:,.2f}", delta=f"{pct_change:.2f}%", label_visibility="collapsed")
-                                except: st.metric(label="val", value="Error", label_visibility="collapsed")
-                            else: st.metric(label="val", value="N/A", label_visibility="collapsed")
-                    
-    st.markdown("---")
+    # Dynamic Layout Allocation
+    show_fav = st.session_state.show_fav
+    show_news = st.session_state.show_news
     
-    col_left, col_main, col_news = st.columns([2, 5, 2.5]) 
+    if show_fav and show_news:
+        cols = st.columns([2, 5, 2.5])
+        col_left, col_main, col_news = cols[0], cols[1], cols[2]
+    elif show_fav and not show_news:
+        cols = st.columns([2, 7.5])
+        col_left, col_main, col_news = cols[0], cols[1], None
+    elif not show_fav and show_news:
+        cols = st.columns([7.5, 2.5])
+        col_left, col_main, col_news = None, cols[0], cols[1]
+    else:
+        cols = st.columns([1])
+        col_left, col_main, col_news = None, cols[0], None
     
-    with col_left:
-        st.subheader("⭐ Favorites")
-        if not st.session_state.fav_ratios: st.caption("No favorites saved yet.")
-        for idx, (num, den) in enumerate(st.session_state.fav_ratios):
-            with st.container(border=True):
-                disp_text = f"**{num}**" if den == "None" else f"**{num}**<br><span style='color:#787b86;'>/ {den}</span>"
-                st.markdown(disp_text, unsafe_allow_html=True)
-                c1, c2 = st.columns([3, 1])
-                if c1.button("🔍 Load", key=f"fav_load_{idx}", use_container_width=True):
-                    st.session_state.target_num = num
-                    st.session_state.target_den = den
-                    st.rerun()
-                if c2.button("❌", key=f"fav_del_{idx}", use_container_width=True):
-                    st.session_state.fav_ratios.remove((num, den))
-                    st.rerun()
+    if col_left:
+        with col_left:
+            st.subheader("⭐ Favorites")
+            if not st.session_state.fav_ratios: st.caption("No favorites saved yet.")
+            for idx, (num, den) in enumerate(st.session_state.fav_ratios):
+                with st.container(border=True):
+                    disp_text = f"**{num}**" if den == "None" else f"**{num}**<br><span style='color:#787b86;'>/ {den}</span>"
+                    st.markdown(disp_text, unsafe_allow_html=True)
+                    c1, c2 = st.columns([3, 1])
+                    if c1.button("🔍 Load", key=f"fav_load_{idx}", use_container_width=True):
+                        st.session_state.target_num = num
+                        st.session_state.target_den = den
+                        st.rerun()
+                    if c2.button("❌", key=f"fav_del_{idx}", use_container_width=True):
+                        st.session_state.fav_ratios.remove((num, den))
+                        st.rerun()
 
     with col_main:
         macro_tabs = st.tabs(["🇮🇳 NSE", "🇺🇸 US", "🌍 Global", "🕒 Recent"])
-        
         d_col = st.session_state.get('draw_color', '#2962FF')
         d_wid = st.session_state.get('draw_width', 2)
 
@@ -909,31 +927,32 @@ with tab1:
                             html_payload, height_px = render_tv_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", d_col, d_wid, show_hud=False, base_height=200, enable_drawing=False)
                             if html_payload: components.html(html_payload, height=height_px, scrolling=False)
 
-    with col_news:
-        st.subheader("📋 Watchlists")
-        with st.container(border=True):
-            active_wl = st.selectbox("Select", list(st.session_state.watchlists.keys()), index=list(st.session_state.watchlists.keys()).index(st.session_state.active_wl), label_visibility="collapsed", key="wl_sel")
-            st.session_state.active_wl = active_wl
-            
-            wl_data = fetch_bulk_watchlist(st.session_state.watchlists[active_wl])
-            if not wl_data.empty:
-                df = pd.DataFrame(wl_data)
-                df['Price'] = df.apply(lambda row: f"{CURRENCY_MAP.get(row['Asset'], '')}{row['Price']:.2f}", axis=1)
-                styled_df = df.style.map(lambda x: 'color: #089981; font-weight: bold;' if x > 0 else 'color: #f23645; font-weight: bold;' if x < 0 else '', subset=['Chg %']).format({"Chg %": "{:+.2f}%"})
-                event = st.dataframe(styled_df, hide_index=True, use_container_width=True, on_select="rerun", selection_mode="single-row", key="wl_df")
-                if len(event.selection.rows) > 0:
-                    selected_asset = df.iloc[event.selection.rows[0]]["Asset"]
-                    st.session_state.target_num = selected_asset
-                    st.session_state.target_den = "None"
-                    st.rerun()
+    if col_news:
+        with col_news:
+            st.subheader("📋 Watchlists")
+            with st.container(border=True):
+                active_wl = st.selectbox("Select", list(st.session_state.watchlists.keys()), index=list(st.session_state.watchlists.keys()).index(st.session_state.active_wl), label_visibility="collapsed", key="wl_sel")
+                st.session_state.active_wl = active_wl
+                
+                wl_data = fetch_bulk_watchlist(st.session_state.watchlists[active_wl])
+                if not wl_data.empty:
+                    df = pd.DataFrame(wl_data)
+                    df['Price'] = df.apply(lambda row: f"{CURRENCY_MAP.get(row['Asset'], '')}{row['Price']:.2f}", axis=1)
+                    styled_df = df.style.map(lambda x: 'color: #089981; font-weight: bold;' if x > 0 else 'color: #f23645; font-weight: bold;' if x < 0 else '', subset=['Chg %']).format({"Chg %": "{:+.2f}%"})
+                    event = st.dataframe(styled_df, hide_index=True, use_container_width=True, on_select="rerun", selection_mode="single-row", key="wl_df")
+                    if len(event.selection.rows) > 0:
+                        selected_asset = df.iloc[event.selection.rows[0]]["Asset"]
+                        st.session_state.target_num = selected_asset
+                        st.session_state.target_den = "None"
+                        st.rerun()
 
-        st.subheader("📰 Sentiment Feed")
-        with st.container(border=True, height=350):
-            news = fetch_market_news(st.session_state.target_num)
-            for item in news:
-                st.markdown(f"{item['tag']} **[{item['title']}]({item['link']})**")
-                st.caption(f"🕒 {item.get('published', 'Recent').replace('+0000', '').strip()}")
-                st.markdown("---")
+            st.subheader("📰 Sentiment Feed")
+            with st.container(border=True, height=350):
+                news = fetch_market_news(st.session_state.target_num)
+                for item in news:
+                    st.markdown(f"{item['tag']} **[{item['title']}]({item['link']})**")
+                    st.caption(f"🕒 {item.get('published', 'Recent').replace('+0000', '').strip()}")
+                    st.markdown("---")
 
 # --- SCREEN 2: DYNAMIC EXPLORER ---
 with tab2:
@@ -1012,7 +1031,6 @@ with tab2:
                             monthly_rtn = s_data.groupby(['Year', 'Month'])['Close'].apply(lambda x: (x.iloc[-1]/x.iloc[0] - 1)*100).unstack()
                             monthly_rtn.columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
                             
-                            # Plotly exclusively retained for the Heatmap visualization
                             fig_sea = go.Figure(data=go.Heatmap(
                                 z=monthly_rtn.values, x=monthly_rtn.columns, y=monthly_rtn.index,
                                 colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
