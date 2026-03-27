@@ -56,7 +56,6 @@ with c_export:
         st.markdown("**📸 High-Res Screenshots**")
         st.caption("Hover over any interactive chart and click the **Camera Icon** in the top-right toolbar. The engine is configured to automatically download a clean, **4K Resolution (1600x900) PNG** of your analysis.")
 
-
 # --- CURRENCY MAPPING ENGINE ---
 CURRENCY_MAP = {
     "S&P 500": "$", "Nasdaq 100": "$", "Dow Jones": "$", "Russell 2000": "$", "VIX": "",
@@ -97,11 +96,9 @@ if 'target_num' not in st.session_state: st.session_state.target_num = "S&P 500"
 if 'target_den' not in st.session_state: st.session_state.target_den = "None"
 if 'target_period' not in st.session_state: st.session_state.target_period = "1y"
 
-
 # --- SIDEBAR: OMNIBOX & CONTROLS ---
 st.sidebar.title("⚙️ Terminal Setup")
 
-# 1. THE OMNIBOX
 st.sidebar.markdown("**💻 Command Line**")
 with st.sidebar.form(key="omni_form", clear_on_submit=True):
     col_cmd, col_btn = st.columns([3, 1])
@@ -143,14 +140,10 @@ if omni_submit and omni_cmd:
         st.rerun() 
     except Exception: st.toast("Command error. Use format: Asset1 / Asset2 timeframe", icon="⚠️")
 
-
-# 2. DATA & HISTORY MANAGEMENT (NEW FEATURE)
 with st.sidebar.expander("🧹 Data & History Management", expanded=False):
     st.caption("Wipe local cache and force fresh data pull.")
     del_timeframe = st.selectbox("Select History to Delete", ["Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time History"])
-    
     if st.button("🗑️ Reset & Clear History", use_container_width=True):
-        # Clears backend data cache (forces all charts to redraw freshly)
         st.cache_data.clear()
         st.toast(f"Successfully cleared {del_timeframe} of cached history.", icon="✅")
         time.sleep(0.5)
@@ -186,7 +179,6 @@ with st.sidebar.expander("📈 Technicals & Overlays", expanded=True):
     show_volume = st.checkbox("Show Volume Bar", value=True)
     selected_overlays = st.multiselect("Overlays", ["21 EMA", "50 SMA", "200 EMA", "AVWAP"], default=["50 SMA"])
     selected_oscillators = st.multiselect("Oscillators", ["Volume", "RSI (14)", "MACD (12, 26, 9)", "Drawdown %"], default=["Volume"])
-
 
 # --- HELPERS & DATA ENGINES ---
 def format_large_number(num):
@@ -285,7 +277,8 @@ def fetch_market_news(keyword="None"):
     return news_items[:15]
 
 
-# --- TRADINGVIEW CHART ENGINE WITH 4K EXPORT ---
+# --- TRADINGVIEW CHART ENGINE WITH MAXIMAL PLOTLY DRAWING CAPABILITIES ---
+# Added all supported Plotly drawing tools (Trendlines, Paths, Circles, Rectangles, Eraser)
 TV_CONFIG = {
     'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'drawclosedpath', 'drawcircle', 'drawrect', 'eraseshape'],
     'displayModeBar': True, 
@@ -293,7 +286,6 @@ TV_CONFIG = {
     'scrollZoom': True,
     'toImageButtonOptions': {'format': 'png', 'filename': 'Macro_Conviction_Builder_Chart', 'height': 900, 'width': 1600, 'scale': 2 }
 }
-# Upgraded STATIC CONFIG: It now supports zooming, panning, and drawing tools just like TV_CONFIG
 STATIC_CONFIG = {
     'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape'],
     'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True
@@ -374,25 +366,25 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
     if has_volume:
         vol_colors = ['rgba(8, 153, 129, 0.5)' if row['Ratio_Close'] >= row['Ratio_Open'] else 'rgba(242, 54, 69, 0.5)' for _, row in df.iterrows()]
         fig.add_trace(go.Bar(x=df.index, y=df['Volume_num'], marker_color=vol_colors, name="Volume"), row=curr_row, col=1)
-        fig.update_yaxes(title_text="Vol", row=curr_row, col=1, showgrid=False, tickformat=".2s")
+        fig.update_yaxes(title_text="Vol", row=curr_row, col=1, showgrid=False, tickformat=".2s", fixedrange=False)
         curr_row += 1
 
     if "RSI (14)" in active_osc:
         fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], line=dict(color='#7E57C2', width=1)), row=curr_row, col=1)
         fig.add_hline(y=70, line_dash="dot", line_color='#787b86', row=curr_row, col=1)
         fig.add_hline(y=30, line_dash="dot", line_color='#787b86', row=curr_row, col=1)
-        fig.update_yaxes(range=[0, 100], title_text="RSI", row=curr_row, col=1); curr_row += 1
+        fig.update_yaxes(range=[0, 100], title_text="RSI", row=curr_row, col=1, fixedrange=False); curr_row += 1
         
     if "MACD (12, 26, 9)" in active_osc:
         fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Line'], line=dict(color=TV_BLUE, width=1)), row=curr_row, col=1)
         fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Signal'], line=dict(color='#FF9800', width=1)), row=curr_row, col=1)
         hc = [TV_GREEN if v >= 0 else TV_RED for v in df['MACD_Hist']]
         fig.add_trace(go.Bar(x=df.index, y=df['MACD_Hist'], marker_color=hc), row=curr_row, col=1)
-        fig.update_yaxes(title_text="MACD", row=curr_row, col=1); curr_row += 1
+        fig.update_yaxes(title_text="MACD", row=curr_row, col=1, fixedrange=False); curr_row += 1
         
     if "Drawdown %" in active_osc:
         fig.add_trace(go.Scatter(x=df.index, y=df['Drawdown'], fill='tozeroy', fillcolor='rgba(242, 54, 69, 0.3)', line=dict(color=TV_RED, width=1)), row=curr_row, col=1)
-        fig.update_yaxes(title_text="DD %", row=curr_row, col=1)
+        fig.update_yaxes(title_text="DD %", row=curr_row, col=1, fixedrange=False)
 
     dec = ".2f" if analysis_mode == "Correlation" or den_name == "None" else ".4f"
     if show_hud:
@@ -414,7 +406,9 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
             showgrid=True, gridcolor=TV_GRID, tickformat=x_format, dtick=d_tick, showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash", row=1, col=1
         )
     else: fig.update_xaxes(showgrid=True, gridcolor=TV_GRID, tickformat=x_format, dtick=d_tick, showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash", row=1, col=1)
-    fig.update_yaxes(showgrid=True, gridcolor=TV_GRID, side="right", tickformat=dec, showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash", row=1, col=1)
+    
+    # ⚠️ UNLOCKED Y-AXIS: fixedrange=False allows you to click and drag the Y-axis to expand/compress price scale
+    fig.update_yaxes(showgrid=True, gridcolor=TV_GRID, side="right", tickformat=dec, showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash", fixedrange=False, row=1, col=1)
     
     return fig
 
@@ -582,7 +576,6 @@ with tab2:
                 header_title = f"{selected_asset_name} / {benchmark_name}" if benchmark_name != "None" else f"{selected_asset_name}"
                 c1.markdown(f"<h3 style='margin-bottom:0;'>{header_title} &nbsp;<span style='color:{clr}; font-size:1.3rem;'>{curr}{last_px:,.2f} ({sgn}{pct_chg:.2f}%)</span></h3>", unsafe_allow_html=True)
                 
-                # FUNDAMENTAL TEAR SHEET
                 if benchmark_name == "None":
                     funds = fetch_fundamentals(tkr)
                     if funds:
@@ -605,7 +598,6 @@ with tab2:
             fig = render_chart(selected_asset_name, benchmark_name, timeframe, interval_selection, chart_type, selected_overlays, selected_oscillators, show_vol=show_volume, analysis_mode=analysis_mode.split()[0], show_hud=True, show_rangeselector=True, height=700)
             if fig: st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
             
-        # SEASONALITY GRID
         if selected_asset_name != "None":
             with st.expander("📅 Historical Seasonality Matrix (Monthly % Returns)", expanded=False):
                 with st.spinner("Calculating Seasonality..."):
