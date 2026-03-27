@@ -122,11 +122,11 @@ if omni_submit and omni_cmd:
             if len(num_part_split) > 1:
                 tf = num_part_split[1].lower()
                 if tf in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: st.session_state.target_period = tf
+        st.toast(f"Loaded: {st.session_state.target_num}", icon="🚀")
         st.rerun() 
-    except: pass
+    except Exception: pass
 
 with st.sidebar.expander("🧹 Data & History Management", expanded=False):
-    st.caption("Wipe local cache and force fresh data pull.")
     del_timeframe = st.selectbox("Select History to Delete", ["Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time History"])
     if st.button("🗑️ Reset & Clear Cache", use_container_width=True):
         st.cache_data.clear()
@@ -170,8 +170,8 @@ with st.sidebar.expander("⏱️ Time & Style", expanded=True):
 
 with st.sidebar.expander("🎨 Drawing Toolbox (Dynamic Chart)", expanded=True):
     c_color, c_width = st.columns([1, 2])
-    with c_color: st.session_state.draw_color = st.color_picker("Color", st.session_state.get("draw_color", "#2962FF"))
-    with c_width: st.session_state.draw_width = st.slider("Thickness", 1, 5, st.session_state.get("draw_width", 2))
+    with c_color: ui_draw_color = st.color_picker("Color", "#2962FF")
+    with c_width: ui_draw_width = st.slider("Thickness", 1, 5, 2)
 
 with st.sidebar.expander("📈 Technicals & Overlays", expanded=True):
     show_volume = st.checkbox("Show Volume Bar", value=True)
@@ -212,7 +212,10 @@ def fetch_yahoo_data(ticker, period, interval):
         data = yf.download(ticker, period=period, interval=interval, progress=False)
         if data.empty: return None
         if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
-        return data.loc[:, ~data.columns.duplicated()]
+        data = data.loc[:, ~data.columns.duplicated()]
+        # CRITICAL BULLETPROOFING: Strip timezones to prevent merge collisions between global exchanges
+        data.index = data.index.tz_localize(None) 
+        return data
     except: return None
 
 @st.cache_data(ttl=300)
@@ -257,7 +260,7 @@ def fetch_market_news(keyword="None"):
 
 
 # --- UNIVERSAL TRADINGVIEW ENGINE ---
-def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol, analysis_mode, show_hud=True, base_height=500, enable_drawing=False):
+def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol, analysis_mode, draw_color, draw_width, show_hud=True, base_height=500, enable_drawing=False):
     if num_name == "None" and den_name == "None": 
         return "<div style='padding:20px; text-align:center; color:#787b86; font-family:sans-serif;'>No assets selected.</div>", base_height
     
@@ -276,7 +279,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
 
     df = pd.merge(num_data, den_data, left_index=True, right_index=True, suffixes=('_num', '_den'))
     
-    # STRICT STERILIZATION (CRITICAL FOR JS STABILITY)
+    # STRICT STERILIZATION 
     df = df.ffill().bfill() 
     df = df[~df.index.duplicated(keep='first')].sort_index()
 
@@ -312,7 +315,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
             df['Peak'] = df['Ratio_Close'].cummax()
             df['Drawdown'] = ((df['Ratio_Close'] - df['Peak']) / df['Peak']) * 100
 
-    # SAFE JSON EXPORT (DROP NANS ONLY PER SERIES)
+    # SAFE JSON EXPORT 
     if analysis_mode == "Correlation" or c_type == "Line":
         temp = df[['Ratio_Close']].dropna()
         main_data = [{"time": d.strftime('%Y-%m-%d'), "value": float(row['Ratio_Close'])} for d, row in temp.iterrows()]
@@ -357,10 +360,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
     hud_display = "block" if show_hud else "none"
     title_text = f"{num_name}" + (f" / {den_name}" if den_name != "None" else "")
 
-    # Inject custom drawing layer if requested using session state styling
-    d_color = st.session_state.get('draw_color', '#2962FF')
-    d_width = st.session_state.get('draw_width', 2)
-    
+    # Inject custom HTML5 Drawing Layer
     drawing_html = ""
     drawing_js = ""
     if enable_drawing:
@@ -382,17 +382,17 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
         let isDrawing = false;
         let startPoint = null;
         let currentMouse = null;
-        let dColor = '{d_color}';
-        let dWidth = {d_width};
+        let dColor = '{draw_color}';
+        let dWidth = {draw_width};
 
-        function setTool(t) {{
+        window.setTool = function(t) {{
             tool = t;
             document.querySelectorAll('#drawing-toolbar button').forEach(b => b.classList.remove('active'));
             document.getElementById('btn-'+t).classList.add('active');
             canvas.style.pointerEvents = (t === 'pan') ? 'none' : 'auto';
-        }}
+        }};
 
-        function clearDrawings() {{ drawings = []; redrawCanvas(); }}
+        window.clearDrawings = function() {{ drawings = []; redrawCanvas(); }};
 
         function getLogicalCoords(e) {{
             const rect = canvas.getBoundingClientRect();
@@ -415,7 +415,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                     drawings.push({{type: 'text', p: pos, text: txt, color: dColor}});
                     redrawCanvas();
                 }}
-                setTool('pan');
+                window.setTool('pan');
             }} else if (tool === 'eraser') {{
                 const rect = canvas.getBoundingClientRect();
                 const mx = e.clientX - rect.left;
@@ -425,12 +425,14 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                     if(d.type === 'text') {{
                         let px = mainChart.timeScale().logicalToCoordinate(d.p.logical);
                         let py = mainSeries.priceToCoordinate(d.p.price);
+                        if (px === null || py === null) return true;
                         return Math.hypot(px-mx, py-my) > 20;
                     }} else if(d.type === 'line') {{
                         let x1 = mainChart.timeScale().logicalToCoordinate(d.p1.logical);
                         let y1 = mainSeries.priceToCoordinate(d.p1.price);
                         let x2 = mainChart.timeScale().logicalToCoordinate(d.p2.logical);
                         let y2 = mainSeries.priceToCoordinate(d.p2.price);
+                        if (x1 === null || y1 === null || x2 === null || y2 === null) return true;
                         let l2 = (x1-x2)*(x1-x2) + (y1-y2)*(y1-y2);
                         if (l2 == 0) return Math.hypot(x1-mx, y1-my) > 10;
                         let t = Math.max(0, Math.min(1, ((mx - x1) * (x2 - x1) + (my - y1) * (y2 - y1)) / l2));
@@ -457,7 +459,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                 startPoint = null;
                 currentMouse = null;
                 redrawCanvas();
-                setTool('pan');
+                window.setTool('pan');
             }}
         }});
 
@@ -521,7 +523,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
             .chart-container {{ width: 100%; display: flex; flex-direction: column; position: relative; }}
             .pane {{ width: 100%; }}
             #main-chart-wrapper {{ position: relative; height: {base_height}px; width: 100%; }}
-            #main-chart {{ height: 100%; width: 100%; }}
+            #main-chart {{ height: {base_height}px; width: 100%; }}
             .sub-chart {{ height: 160px; border-top: 1px solid #e0e3eb; }}
             .error-box {{ padding: 20px; color: #f23645; text-align: center; border: 1px solid #e0e3eb; border-radius: 6px; margin: 20px; background: #fffafb; }}
             #tv-legend {{ position: absolute; left: 12px; top: 12px; z-index: 100; font-size: 13px; font-weight: 500; color: #131722; background: rgba(255,255,255,0.85); padding: 6px 10px; border-radius: 4px; pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: {hud_display}; }}
@@ -671,11 +673,12 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
 def expand_chart_modal(num_name, den_name):
     title = f"{num_name}" if den_name == "None" else f"{num_name} / {den_name}"
     st.markdown(f"### {title}")
+    st.caption("💡 *Tip: Scroll to zoom. Click and drag the price scale (right) to expand/compress vertically.*")
     with st.spinner("Loading High-Res TV Engine..."):
         html_payload, height_px = render_tv_chart(
             num_name, den_name, st.session_state.target_period, "1d", 
             "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], True, "Ratio", 
-            show_hud=True, base_height=500, enable_drawing=True
+            ui_draw_color, ui_draw_width, show_hud=True, base_height=500, enable_drawing=True
         )
         if html_payload: components.html(html_payload, height=height_px, scrolling=False)
 
@@ -751,7 +754,7 @@ with tab1:
                         st.session_state.target_num = sec
                         st.session_state.target_den = "Broad Market 500 (IND)"
                         st.rerun()
-                    html_payload, height_px = render_tv_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=200, enable_drawing=False)
+                    html_payload, height_px = render_tv_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", ui_draw_color, ui_draw_width, show_hud=False, base_height=200, enable_drawing=False)
                     if html_payload: components.html(html_payload, height=height_px, scrolling=False)
                         
         with macro_tabs[1]:
@@ -766,7 +769,7 @@ with tab1:
                         st.session_state.target_num = sec
                         st.session_state.target_den = "S&P 500"
                         st.rerun()
-                    html_payload, height_px = render_tv_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=200, enable_drawing=False)
+                    html_payload, height_px = render_tv_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", ui_draw_color, ui_draw_width, show_hud=False, base_height=200, enable_drawing=False)
                     if html_payload: components.html(html_payload, height=height_px, scrolling=False)
 
         with macro_tabs[2]:
@@ -781,7 +784,7 @@ with tab1:
                         st.session_state.target_num = num
                         st.session_state.target_den = den
                         st.rerun()
-                    html_payload, height_px = render_tv_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=220, enable_drawing=False)
+                    html_payload, height_px = render_tv_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", ui_draw_color, ui_draw_width, show_hud=False, base_height=220, enable_drawing=False)
                     if html_payload: components.html(html_payload, height=height_px, scrolling=False)
                     
         with macro_tabs[3]:
@@ -797,7 +800,7 @@ with tab1:
                             st.session_state.target_num = num
                             st.session_state.target_den = den
                             st.rerun()
-                        html_payload, height_px = render_tv_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=200, enable_drawing=False)
+                        html_payload, height_px = render_tv_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", ui_draw_color, ui_draw_width, show_hud=False, base_height=200, enable_drawing=False)
                         if html_payload: components.html(html_payload, height=height_px, scrolling=False)
 
     with col_news:
@@ -889,7 +892,7 @@ with tab2:
                 st.session_state.target_num, st.session_state.target_den, 
                 st.session_state.target_period, interval_selection, chart_type, 
                 selected_overlays, selected_oscillators, show_volume, analysis_mode.split()[0], 
-                show_hud=True, base_height=500, enable_drawing=True
+                ui_draw_color, ui_draw_width, show_hud=True, base_height=500, enable_drawing=True
             )
             if html_payload: components.html(html_payload, height=height_px, scrolling=False)
             
