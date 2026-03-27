@@ -170,8 +170,8 @@ with st.sidebar.expander("⏱️ Time & Style", expanded=True):
 
 with st.sidebar.expander("🎨 Drawing Toolbox (Dynamic Chart)", expanded=True):
     c_color, c_width = st.columns([1, 2])
-    with c_color: ui_draw_color = st.color_picker("Color", st.session_state.get("draw_color", "#2962FF"))
-    with c_width: ui_draw_width = st.slider("Thickness", 1, 5, st.session_state.get("draw_width", 2))
+    with c_color: st.session_state.draw_color = st.color_picker("Color", st.session_state.get("draw_color", "#2962FF"))
+    with c_width: st.session_state.draw_width = st.slider("Thickness", 1, 5, st.session_state.get("draw_width", 2))
 
 with st.sidebar.expander("📈 Technicals & Overlays", expanded=True):
     show_volume = st.checkbox("Show Volume Bar", value=True)
@@ -359,7 +359,6 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
     hud_display = "block" if show_hud else "none"
     title_text = f"{num_name}" + (f" / {den_name}" if den_name != "None" else "")
 
-    # Inject custom HTML5 Drawing Layer with Moving and H-RAY Support
     drawing_html = ""
     drawing_js = ""
     if enable_drawing:
@@ -372,6 +371,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
             <button onclick="window.setTool('text')" id="btn-text">🔤 Text</button>
             <button onclick="window.setTool('eraser')" id="btn-eraser">🧽 Erase</button>
             <button onclick="window.clearDrawings()">🗑️ Clear</button>
+            <button onclick="window.toggleFullScreen()" title="Fill Monitor">⛶ Full</button>
         </div>
         <canvas id="drawing-layer"></canvas>
         """
@@ -386,7 +386,6 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
         let dColor = '{draw_color}';
         let dWidth = {draw_width};
 
-        // Moving State
         let draggingDrawing = null;
         let dragType = null;
         let lastMousePos = null;
@@ -399,6 +398,13 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
         }};
 
         window.clearDrawings = function() {{ drawings = []; redrawCanvas(); }};
+        
+        window.toggleFullScreen = function() {{
+            const el = document.documentElement;
+            if (!document.fullscreenElement) {{
+                el.requestFullscreen().catch(err => alert("Error: " + err.message));
+            }} else {{ document.exitFullscreen(); }}
+        }};
 
         function getLogicalCoords(e) {{
             const rect = canvas.getBoundingClientRect();
@@ -603,9 +609,9 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
         <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
         <style>
             body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #ffffff; overflow: hidden; }}
-            .chart-container {{ width: 100%; display: flex; flex-direction: column; position: relative; background: #fff; }}
+            .chart-container {{ width: 100%; height: 100vh; display: flex; flex-direction: column; position: relative; background: #fff; }}
             .pane {{ width: 100%; }}
-            #main-chart-wrapper {{ position: relative; flex-grow: 1; height: {base_height}px; width: 100%; }}
+            #main-chart-wrapper {{ position: relative; flex-grow: 1; min-height: {base_height}px; width: 100%; }}
             #main-chart {{ height: 100%; width: 100%; }}
             .sub-chart {{ height: 160px; border-top: 1px solid #e0e3eb; flex-shrink: 0; }}
             .error-box {{ padding: 20px; color: #f23645; text-align: center; border: 1px solid #e0e3eb; border-radius: 6px; margin: 20px; background: #fffafb; }}
@@ -752,18 +758,18 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
     height_px = base_height + (160 * len(active_osc))
     return html, height_px
 
-@st.dialog("📈 Full Screen Analysis", width="large")
+@st.dialog("📈 Expanded Analysis", width="large")
 def expand_chart_modal(num_name, den_name):
     title = f"{num_name}" if den_name == "None" else f"{num_name} / {den_name}"
     st.markdown(f"### {title}")
-    st.caption("💡 *Tip: To make this fill your entire monitor, use your browser's zoom/fullscreen function (F11).*")
-    with st.spinner("Loading High-Res TV Engine..."):
-        d_col = st.session_state.get('draw_color', '#2962FF')
-        d_wid = st.session_state.get('draw_width', 2)
+    st.caption("💡 *Tip: For true monitor-level full screen, click the ⛶ Full button inside the chart's toolbar.*")
+    d_col = st.session_state.get('draw_color', '#2962FF')
+    d_wid = st.session_state.get('draw_width', 2)
+    with st.spinner("Loading Engine..."):
         html_payload, height_px = render_tv_chart(
             num_name, den_name, st.session_state.target_period, "1d", 
             "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], True, "Ratio", 
-            d_col, d_wid, show_hud=True, base_height=750, enable_drawing=True
+            d_col, d_wid, show_hud=True, base_height=500, enable_drawing=True
         )
         if html_payload: components.html(html_payload, height=height_px, scrolling=False)
 
@@ -789,7 +795,7 @@ with tab1:
                         with st.container(border=True):
                             c_title, c_mod, c_exp = st.columns([5, 2, 2])
                             c_title.markdown(f"<div style='font-size:0.85rem; font-weight:600; color:#787b86; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{idx_name}</div>", unsafe_allow_html=True)
-                            if c_mod.button("⛶", key=f"top_mod_{idx_name}", help="Full Screen Modal"): expand_chart_modal(idx_name, "None")
+                            if c_mod.button("⛶", key=f"top_mod_{idx_name}", help="Expand Chart"): expand_chart_modal(idx_name, "None")
                             if c_exp.button("🔍", key=f"top_exp_{idx_name}", help="Analyze in Explorer"):
                                 st.session_state.target_num = idx_name
                                 st.session_state.target_den = "None"
@@ -831,65 +837,69 @@ with tab1:
         d_wid = st.session_state.get('draw_width', 2)
 
         with macro_tabs[0]:
-            nse_list = ["Nifty Bank", "Nifty IT", "Nifty Auto", "Nifty Pharma"]
-            cols = st.columns(2)
-            for idx, sec in enumerate(nse_list):
-                with cols[idx % 2], st.container(border=True):
-                    head1, head2, head3 = st.columns([6, 1.5, 1.5])
-                    head1.markdown(f"**{sec}**")
-                    if head2.button("⛶", key=f"btn_mod_nse_{idx}"): expand_chart_modal(sec, "Broad Market 500 (IND)")
-                    if head3.button("🔍", key=f"btn_exp_nse_{idx}"):
-                        st.session_state.target_num = sec
-                        st.session_state.target_den = "Broad Market 500 (IND)"
-                        st.rerun()
-                    html_payload, height_px = render_tv_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", d_col, d_wid, show_hud=False, base_height=200, enable_drawing=False)
-                    if html_payload: components.html(html_payload, height=height_px, scrolling=False)
+            nse_list = ["Nifty Bank", "Nifty IT", "Nifty Auto", "Nifty Pharma", "Nifty Metal", "Nifty Energy", "Nifty FMCG", "Nifty Realty", "Nifty PSU Bank"]
+            with st.container(height=650, border=False):
+                cols = st.columns(2)
+                for idx, sec in enumerate(nse_list):
+                    with cols[idx % 2], st.container(border=True):
+                        head1, head2, head3 = st.columns([6, 1.5, 1.5])
+                        head1.markdown(f"**{sec}**")
+                        if head2.button("⛶", key=f"btn_mod_nse_{idx}"): expand_chart_modal(sec, "Broad Market 500 (IND)")
+                        if head3.button("🔍", key=f"btn_exp_nse_{idx}"):
+                            st.session_state.target_num = sec
+                            st.session_state.target_den = "Broad Market 500 (IND)"
+                            st.rerun()
+                        html_payload, height_px = render_tv_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", d_col, d_wid, show_hud=False, base_height=200, enable_drawing=False)
+                        if html_payload: components.html(html_payload, height=height_px, scrolling=False)
                         
         with macro_tabs[1]:
-            us_list = ["Nasdaq 100", "Russell 2000", "US Tech ETF", "US Healthcare ETF"]
-            cols = st.columns(2)
-            for idx, sec in enumerate(us_list):
-                with cols[idx % 2], st.container(border=True):
-                    head1, head2, head3 = st.columns([6, 1.5, 1.5])
-                    head1.markdown(f"**{sec}**")
-                    if head2.button("⛶", key=f"btn_mod_us_{idx}"): expand_chart_modal(sec, "S&P 500")
-                    if head3.button("🔍", key=f"btn_exp_us_{idx}"):
-                        st.session_state.target_num = sec
-                        st.session_state.target_den = "S&P 500"
-                        st.rerun()
-                    html_payload, height_px = render_tv_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", d_col, d_wid, show_hud=False, base_height=200, enable_drawing=False)
-                    if html_payload: components.html(html_payload, height=height_px, scrolling=False)
+            us_list = ["Nasdaq 100", "Russell 2000", "US Tech ETF", "US Fin ETF", "US Healthcare ETF", "US Energy ETF"]
+            with st.container(height=650, border=False):
+                cols = st.columns(2)
+                for idx, sec in enumerate(us_list):
+                    with cols[idx % 2], st.container(border=True):
+                        head1, head2, head3 = st.columns([6, 1.5, 1.5])
+                        head1.markdown(f"**{sec}**")
+                        if head2.button("⛶", key=f"btn_mod_us_{idx}"): expand_chart_modal(sec, "S&P 500")
+                        if head3.button("🔍", key=f"btn_exp_us_{idx}"):
+                            st.session_state.target_num = sec
+                            st.session_state.target_den = "S&P 500"
+                            st.rerun()
+                        html_payload, height_px = render_tv_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", d_col, d_wid, show_hud=False, base_height=200, enable_drawing=False)
+                        if html_payload: components.html(html_payload, height=height_px, scrolling=False)
 
         with macro_tabs[2]:
             macro_pairs = [("Gold (Spot)", "S&P 500", "Safe Haven vs Equity"), ("US 20+ Yr Treasury", "S&P 500", "Bonds vs Equity"), ("Emerging Markets", "S&P 500", "EM vs Developed"), ("Bitcoin", "Gold (Spot)", "Digital vs Gold")]
-            cols = st.columns(2)
-            for idx, (num, den, title) in enumerate(macro_pairs):
-                with cols[idx % 2], st.container(border=True):
-                    head1, head2, head3 = st.columns([6, 1.5, 1.5])
-                    head1.markdown(f"**{title}**<br>({num} / {den})", unsafe_allow_html=True)
-                    if head2.button("⛶", key=f"btn_mod_glb_{idx}"): expand_chart_modal(num, den)
-                    if head3.button("🔍", key=f"btn_exp_glb_{idx}"):
-                        st.session_state.target_num = num
-                        st.session_state.target_den = den
-                        st.rerun()
-                    html_payload, height_px = render_tv_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", d_col, d_wid, show_hud=False, base_height=220, enable_drawing=False)
-                    if html_payload: components.html(html_payload, height=height_px, scrolling=False)
+            with st.container(height=650, border=False):
+                cols = st.columns(2)
+                for idx, (num, den, title) in enumerate(macro_pairs):
+                    with cols[idx % 2], st.container(border=True):
+                        head1, head2, head3 = st.columns([6, 1.5, 1.5])
+                        head1.markdown(f"**{title}**<br>({num} / {den})", unsafe_allow_html=True)
+                        if head2.button("⛶", key=f"btn_mod_glb_{idx}"): expand_chart_modal(num, den)
+                        if head3.button("🔍", key=f"btn_exp_glb_{idx}"):
+                            st.session_state.target_num = num
+                            st.session_state.target_den = den
+                            st.rerun()
+                        html_payload, height_px = render_tv_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", d_col, d_wid, show_hud=False, base_height=220, enable_drawing=False)
+                        if html_payload: components.html(html_payload, height=height_px, scrolling=False)
                     
         with macro_tabs[3]:
             if not st.session_state.recent_ratios: st.info("No recent charts. Analyze ratios in the Dynamic Explorer to see them here.")
             else:
-                cols = st.columns(2)
-                for idx, (num, den) in enumerate(st.session_state.recent_ratios):
-                    with cols[idx % 2], st.container(border=True):
-                        h1, h2, h3 = st.columns([6, 1.5, 1.5])
-                        h1.markdown(f"**{num}** / {den}" if den != "None" else f"**{num}**")
-                        if h2.button("⛶", key=f"rec_mod_{idx}"): expand_chart_modal(num, den)
-                        if h3.button("🔍", key=f"rec_exp_{idx}"):
-                            st.session_state.target_num = num
-                            st.session_state.target_den = den
-                            st.rerun()
-                        html_payload, height_px = render_tv_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", d_col, d_wid, show_hud=False, base_height=200, enable_drawing=False)
-                        if html_payload: components.html(html_payload, height=height_px, scrolling=False)
+                with st.container(height=650, border=False):
+                    cols = st.columns(2)
+                    for idx, (num, den) in enumerate(st.session_state.recent_ratios):
+                        with cols[idx % 2], st.container(border=True):
+                            h1, h2, h3 = st.columns([6, 1.5, 1.5])
+                            h1.markdown(f"**{num}** / {den}" if den != "None" else f"**{num}**")
+                            if h2.button("⛶", key=f"rec_mod_{idx}"): expand_chart_modal(num, den)
+                            if h3.button("🔍", key=f"rec_exp_{idx}"):
+                                st.session_state.target_num = num
+                                st.session_state.target_den = den
+                                st.rerun()
+                            html_payload, height_px = render_tv_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", d_col, d_wid, show_hud=False, base_height=200, enable_drawing=False)
+                            if html_payload: components.html(html_payload, height=height_px, scrolling=False)
 
     with col_news:
         st.subheader("📋 Watchlists")
@@ -922,7 +932,7 @@ with tab2:
     col_dyn_main, col_dyn_news = st.columns([3, 1]) 
     
     with col_dyn_main:
-        c1, c_save, c_full, c_clear = st.columns([3.5, 1.5, 1.5, 1.5])
+        c1, c_save, c_clear = st.columns([4, 1.5, 1.5])
         
         current_pair = (st.session_state.target_num, st.session_state.target_den)
         if current_pair in st.session_state.recent_ratios: st.session_state.recent_ratios.remove(current_pair)
@@ -967,16 +977,12 @@ with tab2:
                 if st.button("⭐ Save Ratio", use_container_width=True):
                     st.session_state.fav_ratios.append(current_pair)
                     st.rerun()
-                    
-        with c_full:
-            if st.button("⛶ Full Screen", use_container_width=True):
-                expand_chart_modal(st.session_state.target_num, st.session_state.target_den)
                 
         with c_clear:
             if st.button("🗑️ Clear Screen", use_container_width=True): st.rerun()
 
-        st.caption("💡 *Tip: To adjust a drawn line, select the 🖱️ Move tool, then click and drag the endpoints or the body of the line.*")
-        with st.spinner("Rendering WebGL Engine..."):
+        st.caption("💡 *Tip: For True Full-Screen, click the '⛶ Full' button inside the chart overlay on the right.*")
+        with st.spinner("Rendering WebGL Engine with Custom Drawing Tool..."):
             d_col = st.session_state.get('draw_color', '#2962FF')
             d_wid = st.session_state.get('draw_width', 2)
             html_payload, height_px = render_tv_chart(
@@ -998,7 +1004,6 @@ with tab2:
                             monthly_rtn = s_data.groupby(['Year', 'Month'])['Close'].apply(lambda x: (x.iloc[-1]/x.iloc[0] - 1)*100).unstack()
                             monthly_rtn.columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
                             
-                            # Plotly exclusively retained for the Heatmap visualization
                             fig_sea = go.Figure(data=go.Heatmap(
                                 z=monthly_rtn.values, x=monthly_rtn.columns, y=monthly_rtn.index,
                                 colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
