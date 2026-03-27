@@ -335,4 +335,567 @@ def render_plotly_chart(num_name, den_name, period_str, interval_str, c_type, ov
     active_osc = [o for o in oscillators if o != "Volume"]
     
     num_rows = 1 + (1 if has_volume else 0) + len(active_osc)
-    if not has_volume and not active_osc: row_heights =
+    if not has_volume and not active_osc: row_heights = [1.0]
+    elif has_volume and not active_osc: row_heights = [0.82, 0.18]
+    elif not has_volume and active_osc: row_heights = [0.70] + [0.30 / len(active_osc)] * len(active_osc)
+    else: row_heights = [0.65, 0.15] + [0.20 / len(active_osc)] * len(active_osc)
+    
+    fig = make_subplots(rows=num_rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
+    TV_GREEN, TV_RED, TV_BLUE, TV_GRID, BG = '#089981', '#f23645', '#2962FF', '#e0e3eb', '#ffffff'
+
+    if analysis_mode == "Correlation":
+        fig.add_trace(go.Scatter(x=df.index, y=c, line=dict(color='#E91E63', width=2)), row=1, col=1)
+        fig.add_hline(y=0, line_dash="dash", line_color=TV_GRID, row=1, col=1)
+    else:
+        if c_type == "Line": fig.add_trace(go.Scatter(x=df.index, y=c, line=dict(color=TV_BLUE, width=1.5)), row=1, col=1)
+        elif c_type == "Bar (OHLC)": fig.add_trace(go.Ohlc(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=c, increasing_line_color=TV_GREEN, decreasing_line_color=TV_RED), row=1, col=1)
+        else: fig.add_trace(go.Candlestick(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=c, increasing_line_color=TV_GREEN, increasing_fillcolor=TV_GREEN, decreasing_line_color=TV_RED, decreasing_fillcolor=TV_RED), row=1, col=1)
+
+    curr_row = 2
+    if has_volume:
+        vol_colors = ['rgba(8, 153, 129, 0.5)' if row['Ratio_Close'] >= row['Ratio_Open'] else 'rgba(242, 54, 69, 0.5)' for _, row in df.iterrows()]
+        fig.add_trace(go.Bar(x=df.index, y=df['Volume_num'], marker_color=vol_colors, name="Volume"), row=curr_row, col=1)
+        fig.update_yaxes(title_text="Vol", row=curr_row, col=1, showgrid=False, tickformat=".2s", fixedrange=False)
+
+    dec = ".2f" if analysis_mode == "Correlation" or den_name == "None" else ".4f"
+    fig.update_layout(template="plotly_white", plot_bgcolor=BG, paper_bgcolor=BG, xaxis_rangeslider_visible=False, height=height, margin=dict(l=10, r=45, t=10, b=10), showlegend=False, hovermode="x unified", dragmode="pan", font=dict(color="#131722", size=11))
+    x_format = "%d %b %Y" if period_str in ["1mo", "3mo", "6mo"] else "%b %Y"
+    fig.update_xaxes(showgrid=True, gridcolor=TV_GRID, tickformat=x_format, showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash", row=1, col=1)
+    fig.update_yaxes(showgrid=True, gridcolor=TV_GRID, side="right", tickformat=dec, showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash", fixedrange=False, row=1, col=1)
+    return fig
+
+# --- TRADINGVIEW LIGHTWEIGHT CHARTS ENGINE (DYNAMIC EXPLORER) ---
+def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol, analysis_mode):
+    if num_name == "None" and den_name == "None": return "<div style='padding:20px; text-align:center; color:#787b86; font-family:sans-serif;'>No assets selected.</div>", 100
+    
+    num_data = fetch_yahoo_data(st.session_state.asset_dict.get(num_name), period_str, interval_str) if num_name != "None" else None
+    den_data = fetch_yahoo_data(st.session_state.asset_dict.get(den_name), period_str, interval_str) if den_name != "None" else None
+    if (num_data is None and den_name == "None") or (den_data is None and num_name == "None"): 
+        return "<div style='padding:20px; text-align:center; color:#f23645; font-family:sans-serif;'>Data unavailable for selected parameters.</div>", 100
+
+    base_df = num_data if num_data is not None else den_data
+    if num_name == "None" or num_data is None:
+        num_data = pd.DataFrame(1, index=base_df.index, columns=['Open', 'High', 'Low', 'Close'])
+        if 'Volume' in base_df.columns: num_data['Volume'] = 1
+    if den_name == "None" or den_data is None:
+        den_data = pd.DataFrame(1, index=base_df.index, columns=['Open', 'High', 'Low', 'Close'])
+        if 'Volume' in base_df.columns: den_data['Volume'] = 1
+
+    df = pd.merge(num_data, den_data, left_index=True, right_index=True, suffixes=('_num', '_den')).dropna()
+    if df.empty: return "<div style='padding:20px; text-align:center; color:#f23645; font-family:sans-serif;'>Data unavailable for selected timeframe.</div>", 100
+    
+    df = df[~df.index.duplicated(keep='first')].sort_index()
+    df = df.replace([np.inf, -np.inf], np.nan)
+
+    if analysis_mode == "Correlation" and num_name != "None" and den_name != "None":
+        c = df['Close_num'].pct_change().rolling(20).corr(df['Close_den'].pct_change())
+        df['Ratio_Close'] = df['Ratio_Open'] = df['Ratio_High'] = df['Ratio_Low'] = c
+        oscillators = [o for o in oscillators if o not in ["Volume", "Drawdown %"]] 
+        overlays = [] 
+    else:
+        df['Ratio_Open'] = df['Open_num'] / df['Open_den']
+        df['Ratio_High'] = df['High_num'] / df['High_den']
+        df['Ratio_Low'] = df['Low_num'] / df['Low_den']
+        df['Ratio_Close'] = df['Close_num'] / df['Close_den']
+        
+    colors = {"21 EMA": "#FF9800", "50 SMA": "#2962FF", "200 EMA": "#F44336", "AVWAP": "#000000"}
+    for ind in overlays:
+        if ind == "50 SMA": df[ind] = df['Ratio_Close'].rolling(50).mean()
+        if ind == "21 EMA": df[ind] = df['Ratio_Close'].ewm(span=21).mean()
+        if ind == "200 EMA": df[ind] = df['Ratio_Close'].ewm(span=200).mean()
+        if ind == "AVWAP" and 'Volume_num' in df.columns:
+            df[ind] = ((df['Ratio_High'] + df['Ratio_Low'] + df['Ratio_Close'])/3 * df['Volume_num']).cumsum() / df['Volume_num'].cumsum()
+
+    active_osc = [o for o in oscillators if o != "Volume"]
+    for osc in active_osc:
+        if osc == "RSI (14)": df['RSI'] = calculate_rsi(df['Ratio_Close'], 14)
+        elif osc == "MACD (12, 26, 9)":
+            df['MACD_Line'] = df['Ratio_Close'].ewm(span=12).mean() - df['Ratio_Close'].ewm(span=26).mean()
+            df['MACD_Signal'] = df['MACD_Line'].ewm(span=9).mean()
+            df['MACD_Hist'] = df['MACD_Line'] - df['MACD_Signal']
+        elif osc == "Drawdown %":
+            df['Peak'] = df['Ratio_Close'].cummax()
+            df['Drawdown'] = ((df['Ratio_Close'] - df['Peak']) / df['Peak']) * 100
+
+    if analysis_mode == "Correlation" or c_type == "Line":
+        temp_main = df.dropna(subset=['Ratio_Close'])
+        main_data = [{"time": d.strftime('%Y-%m-%d'), "value": float(row['Ratio_Close'])} for d, row in temp_main.iterrows()]
+        c_type = "Line"
+    else:
+        temp_main = df.dropna(subset=['Ratio_Open', 'Ratio_High', 'Ratio_Low', 'Ratio_Close'])
+        main_data = [{"time": d.strftime('%Y-%m-%d'), "open": float(row['Ratio_Open']), "high": float(row['Ratio_High']), "low": float(row['Ratio_Low']), "close": float(row['Ratio_Close'])} for d, row in temp_main.iterrows()]
+
+    has_volume = "Volume" in oscillators and 'Volume_num' in df.columns
+    vol_data = []
+    if show_vol and has_volume:
+        temp_vol = df.dropna(subset=['Volume_num'])
+        for d, row in temp_vol.iterrows():
+            c = '#08998180' if row.get('Ratio_Close', 0) >= row.get('Ratio_Open', 0) else '#f2364580'
+            vol_data.append({"time": d.strftime('%Y-%m-%d'), "value": float(row['Volume_num']), "color": c})
+
+    overlay_js = ""
+    for ind in overlays:
+        if ind in df.columns:
+            temp_line = df.dropna(subset=[ind])
+            line_data = [{"time": d.strftime('%Y-%m-%d'), "value": float(v)} for d, v in temp_line[ind].items()]
+            overlay_js += f"const l_{ind.replace(' ', '')} = mainChart.addLineSeries({{ color: '{colors.get(ind, '#000')}', lineWidth: 2, title: '{ind}', crosshairMarkerVisible: false }}); l_{ind.replace(' ', '')}.setData({json.dumps(line_data)});\n"
+
+    osc_js = ""
+    for i, osc in enumerate(active_osc):
+        div_id = f"subchart_{i}"
+        if osc == "RSI (14)":
+            temp_osc = df.dropna(subset=['RSI'])
+            data = [{"time": d.strftime('%Y-%m-%d'), "value": float(v)} for d, v in temp_osc['RSI'].items()]
+            osc_js += f"createSubchart('{div_id}', 'RSI', 'line', {json.dumps(data)}, '#7E57C2');\n"
+        elif osc == "MACD (12, 26, 9)":
+            temp_osc = df.dropna(subset=['MACD_Line', 'MACD_Signal', 'MACD_Hist'])
+            m_line = [{"time": d.strftime('%Y-%m-%d'), "value": float(v)} for d, v in temp_osc['MACD_Line'].items()]
+            m_sig = [{"time": d.strftime('%Y-%m-%d'), "value": float(v)} for d, v in temp_osc['MACD_Signal'].items()]
+            m_hist = [{"time": d.strftime('%Y-%m-%d'), "value": float(v), "color": '#089981' if v>=0 else '#f23645'} for d, v in temp_osc['MACD_Hist'].items()]
+            osc_js += f"createMacdChart('{div_id}', {json.dumps(m_line)}, {json.dumps(m_sig)}, {json.dumps(m_hist)});\n"
+        elif osc == "Drawdown %":
+            temp_osc = df.dropna(subset=['Drawdown'])
+            data = [{"time": d.strftime('%Y-%m-%d'), "value": float(v)} for d, v in temp_osc['Drawdown'].items()]
+            osc_js += f"createSubchart('{div_id}', 'Drawdown %', 'area', {json.dumps(data)}, '#f23645');\n"
+
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #ffffff; overflow: hidden; }}
+            .chart-container {{ width: 100%; display: flex; flex-direction: column; position: relative; }}
+            .pane {{ width: 100%; }}
+            #main-chart {{ height: 480px; }}
+            .sub-chart {{ height: 180px; border-top: 1px solid #e0e3eb; }}
+            .error-box {{ padding: 20px; color: #f23645; text-align: center; border: 1px solid #e0e3eb; border-radius: 6px; margin: 20px; background: #fffafb; }}
+            #tv-legend {{ position: absolute; left: 12px; top: 12px; z-index: 100; font-size: 13px; font-weight: 500; color: #131722; background: rgba(255,255,255,0.85); padding: 6px 10px; border-radius: 4px; pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+        </style>
+    </head>
+    <body>
+        <div id="wrapper" class="chart-container">
+            <div id="tv-legend"><span id="legend-data">Hover over chart to view data</span></div>
+            <div id="main-chart" class="pane"></div>
+            {"".join([f'<div id="subchart_{i}" class="pane sub-chart"></div>' for i in range(len(active_osc))])}
+        </div>
+
+        <script>
+            try {{
+                const charts = [];
+                const chartOptions = {{
+                    layout: {{ backgroundColor: '#ffffff', textColor: '#131722' }},
+                    grid: {{ vertLines: {{ color: '#f0f3fa' }}, horzLines: {{ color: '#f0f3fa' }} }},
+                    timeScale: {{ borderColor: '#e0e3eb', rightOffset: 5, timeVisible: true }},
+                    rightPriceScale: {{ borderColor: '#e0e3eb' }},
+                    crosshair: {{ mode: 0 }}
+                }};
+
+                const mainChart = LightweightCharts.createChart(document.getElementById('main-chart'), chartOptions);
+                charts.push(mainChart);
+                
+                let mainSeries;
+                if('{c_type}' === 'Line') {{
+                    mainSeries = mainChart.addLineSeries({{ color: '{'#E91E63' if analysis_mode == "Correlation" else '#2962FF'}', lineWidth: 2 }});
+                }} else if ('{c_type}' === 'Bar (OHLC)') {{
+                    mainSeries = mainChart.addBarSeries({{ upColor: '#089981', downColor: '#f23645', thinBars: false }});
+                }} else {{
+                    mainSeries = mainChart.addCandlestickSeries({{
+                        upColor: '#089981', downColor: '#f23645', borderVisible: false,
+                        wickUpColor: '#089981', wickDownColor: '#f23645'
+                    }});
+                }}
+                mainSeries.setData({json.dumps(main_data)});
+
+                if('{str(show_vol and has_volume).lower()}' === 'true') {{
+                    const volumeSeries = mainChart.addHistogramSeries({{
+                        color: '#26a69a', priceFormat: {{ type: 'volume' }},
+                        priceScaleId: '', scaleMargins: {{ top: 0.85, bottom: 0 }}
+                    }});
+                    volumeSeries.setData({json.dumps(vol_data)});
+                }}
+
+                {overlay_js}
+
+                function createSubchart(divId, title, type, data, color) {{
+                    const container = document.getElementById(divId);
+                    const chart = LightweightCharts.createChart(container, chartOptions);
+                    charts.push(chart);
+                    let series;
+                    if(type === 'area') {{
+                        series = chart.addAreaSeries({{ lineColor: color, topColor: color+'40', bottomColor: color+'00', title: title }});
+                    }} else {{
+                        series = chart.addLineSeries({{ color: color, lineWidth: 1.5, title: title }});
+                        if (title === 'RSI') {{
+                            chart.addLineSeries({{color: '#787b86', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false}}).setData(data.map(d => ({{time: d.time, value: 70}})));
+                            chart.addLineSeries({{color: '#787b86', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false}}).setData(data.map(d => ({{time: d.time, value: 30}})));
+                        }}
+                    }}
+                    series.setData(data);
+                }}
+
+                function createMacdChart(divId, lineData, sigData, histData) {{
+                    const container = document.getElementById(divId);
+                    const chart = LightweightCharts.createChart(container, chartOptions);
+                    charts.push(chart);
+                    const histSeries = chart.addHistogramSeries({{ priceScaleId: '', scaleMargins: {{ top: 0.1, bottom: 0.1 }} }});
+                    histSeries.setData(histData);
+                    const macdLine = chart.addLineSeries({{ color: '#2962FF', lineWidth: 1.5, title: 'MACD', crosshairMarkerVisible: false }});
+                    macdLine.setData(lineData);
+                    const sigLine = chart.addLineSeries({{ color: '#FF9800', lineWidth: 1.5, title: 'Sig', crosshairMarkerVisible: false }});
+                    sigLine.setData(sigData);
+                }}
+
+                {osc_js}
+
+                const legendData = document.getElementById('legend-data');
+                mainChart.subscribeCrosshairMove(param => {{
+                    if (param.time) {{
+                        const data = param.seriesData.get(mainSeries);
+                        if (data) {{
+                            if (data.open !== undefined) {{
+                                legendData.innerHTML = `O: ${{data.open.toFixed(2)}} H: ${{data.high.toFixed(2)}} L: ${{data.low.toFixed(2)}} C: ${{data.close.toFixed(2)}}`;
+                            }} else {{
+                                legendData.innerHTML = `Close: ${{data.value.toFixed(4)}}`;
+                            }}
+                        }}
+                    }}
+                }});
+
+                if (charts.length > 1) {{
+                    charts.forEach((chart, index) => {{
+                        chart.timeScale().subscribeVisibleTimeRangeChange(range => {{
+                            if (range !== null) {{
+                                charts.forEach(c => {{ if (c !== chart) c.timeScale().setVisibleRange(range); }});
+                            }}
+                        }});
+                        chart.subscribeCrosshairMove(param => {{
+                            if (!param.point) return;
+                            charts.forEach(c => {{
+                                if (c !== chart) c.setCrosshairPosition(param.price, param.time, c.series()[0]);
+                            }});
+                        }});
+                    }});
+                }}
+                
+                new ResizeObserver(entries => {{
+                    if (entries.length === 0 || entries[0].target !== document.body) return;
+                    charts.forEach((c, idx) => {{
+                        const elem = document.getElementById(idx === 0 ? 'main-chart' : `subchart_${idx-1}`);
+                        if(elem) c.applyOptions({{ width: elem.clientWidth }});
+                    }});
+                }}).observe(document.body);
+            }} catch (error) {{
+                document.getElementById('wrapper').innerHTML = "<div class='error-box'><b>Failed to render high-performance chart.</b><br>The selected asset may have incomplete or incompatible historical data parameters.<br><br><i>Log: " + error.message + "</i></div>";
+            }}
+        </script>
+    </body>
+    </html>
+    """
+    height_px = 500 + (180 * len(active_osc))
+    return html, height_px
+
+# --- MODAL: FULL SCREEN CHART VIEWER ---
+@st.dialog("📈 Full Screen Analysis", width="large")
+def expand_chart_modal(num_name, den_name):
+    title = f"{num_name}" if den_name == "None" else f"{num_name} / {den_name}"
+    st.markdown(f"### {title}")
+    st.caption("💡 *Tip: Double-click the chart background to reset the zoom scale.*")
+    with st.spinner("Loading High-Res Interactive Engine..."):
+        fig = render_plotly_chart(num_name, den_name, "max", "1d", "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], show_hud=True, show_rangeselector=True, height=650)
+        if fig: st.plotly_chart(fig, use_container_width=True, config=STATIC_CONFIG)
+
+# --- MULTI-SCREEN TERMINAL TABS ---
+tab1, tab2, tab3 = st.tabs(["🖥️ Macro Overview", "🔍 Dynamic Explorer", "🧮 Correlation Matrix"])
+
+# --- SCREEN 1: MACRO GRID ---
+with tab1:
+    st.subheader("🌐 Live Global Markets")
+    top_indices = ["S&P 500", "Nasdaq 100", "DAX", "FTSE 100", "STOXX 50", "Nikkei 225", "ASX 200", "Nifty 50", "Gold (Spot)", "Crude Oil", "Bitcoin", "US 20+ Yr Treasury"]
+    
+    with st.spinner("Syncing Global Markets..."):
+        for row in range(0, len(top_indices), 6):
+            cols_top = st.columns(6)
+            for col_idx in range(6):
+                idx = row + col_idx
+                if idx < len(top_indices):
+                    idx_name = top_indices[idx]
+                    ticker = st.session_state.asset_dict[idx_name]
+                    curr = CURRENCY_MAP.get(idx_name, "")
+                    
+                    with cols_top[col_idx]:
+                        with st.container(border=True):
+                            c_title, c_mod, c_exp = st.columns([5, 2, 2])
+                            c_title.markdown(f"<div style='font-size:0.85rem; font-weight:600; color:#787b86; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{idx_name}</div>", unsafe_allow_html=True)
+                            if c_mod.button("⛶", key=f"top_mod_{idx_name}", help="Full Screen"): expand_chart_modal(idx_name, "None")
+                            
+                            # Decoupled state execution via safe assignment + rerun
+                            if c_exp.button("🔍", key=f"top_exp_{idx_name}", help="Analyze in Explorer"):
+                                st.session_state.target_num = idx_name
+                                st.session_state.target_den = "None"
+                                st.rerun()
+                                
+                            data = fetch_yahoo_data(ticker, "5d", "1d")
+                            if data is not None and not data.empty and len(data) >= 2:
+                                try:
+                                    last_close, prev_close = float(data['Close'].iloc[-1]), float(data['Close'].iloc[-2])
+                                    pct_change = ((last_close - prev_close) / prev_close) * 100
+                                    st.metric(label="val", value=f"{curr}{last_close:,.2f}", delta=f"{pct_change:.2f}%", label_visibility="collapsed")
+                                except Exception: st.metric(label="val", value="Error", label_visibility="collapsed")
+                            else: st.metric(label="val", value="N/A", label_visibility="collapsed")
+                    
+    st.markdown("---")
+    
+    col_left, col_main, col_news = st.columns([2, 5, 2.5]) 
+    
+    with col_left:
+        st.subheader("⭐ Favorites")
+        if not st.session_state.fav_ratios: st.caption("No favorites saved yet.")
+        for idx, (num, den) in enumerate(st.session_state.fav_ratios):
+            with st.container(border=True):
+                disp_text = f"**{num}**" if den == "None" else f"**{num}**<br><span style='color:#787b86;'>/ {den}</span>"
+                st.markdown(disp_text, unsafe_allow_html=True)
+                c1, c2 = st.columns([3, 1])
+                if c1.button("🔍 Load", key=f"fav_load_{idx}", use_container_width=True):
+                    st.session_state.target_num = num
+                    st.session_state.target_den = den
+                    st.rerun()
+                if c2.button("❌", key=f"fav_del_{idx}", use_container_width=True):
+                    st.session_state.fav_ratios.remove((num, den))
+                    st.rerun()
+
+    with col_main:
+        macro_tabs = st.tabs(["🇮🇳 NSE", "🇺🇸 US", "🌍 Global", "🕒 Recent"])
+        
+        with macro_tabs[0]:
+            nse_list = ["Nifty Bank", "Nifty IT", "Nifty Auto", "Nifty Pharma"]
+            cols = st.columns(2)
+            for idx, sec in enumerate(nse_list):
+                with cols[idx % 2], st.container(border=True):
+                    head1, head2, head3 = st.columns([6, 1.5, 1.5])
+                    head1.markdown(f"**{sec}**")
+                    if head2.button("⛶", key=f"btn_mod_nse_{idx}"): expand_chart_modal(sec, "Broad Market 500 (IND)")
+                    if head3.button("🔍", key=f"btn_exp_nse_{idx}"):
+                        st.session_state.target_num = sec
+                        st.session_state.target_den = "Broad Market 500 (IND)"
+                        st.rerun()
+                    fig = render_plotly_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
+                    if fig: st.plotly_chart(fig, use_container_width=True, key=f"nse_c_{idx}", config=STATIC_CONFIG)
+                        
+        with macro_tabs[1]:
+            us_list = ["Nasdaq 100", "Russell 2000", "US Tech ETF", "US Healthcare ETF"]
+            cols = st.columns(2)
+            for idx, sec in enumerate(us_list):
+                with cols[idx % 2], st.container(border=True):
+                    head1, head2, head3 = st.columns([6, 1.5, 1.5])
+                    head1.markdown(f"**{sec}**")
+                    if head2.button("⛶", key=f"btn_mod_us_{idx}"): expand_chart_modal(sec, "S&P 500")
+                    if head3.button("🔍", key=f"btn_exp_us_{idx}"):
+                        st.session_state.target_num = sec
+                        st.session_state.target_den = "S&P 500"
+                        st.rerun()
+                    fig = render_plotly_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
+                    if fig: st.plotly_chart(fig, use_container_width=True, key=f"us_c_{idx}", config=STATIC_CONFIG)
+
+        with macro_tabs[2]:
+            macro_pairs = [("Gold (Spot)", "S&P 500", "Safe Haven vs Equity"), ("US 20+ Yr Treasury", "S&P 500", "Bonds vs Equity"), ("Emerging Markets", "S&P 500", "EM vs Developed"), ("Bitcoin", "Gold (Spot)", "Digital vs Gold")]
+            cols = st.columns(2)
+            for idx, (num, den, title) in enumerate(macro_pairs):
+                with cols[idx % 2], st.container(border=True):
+                    head1, head2, head3 = st.columns([6, 1.5, 1.5])
+                    head1.markdown(f"**{title}**<br>({num} / {den})", unsafe_allow_html=True)
+                    if head2.button("⛶", key=f"btn_mod_glb_{idx}"): expand_chart_modal(num, den)
+                    if head3.button("🔍", key=f"btn_exp_glb_{idx}"):
+                        st.session_state.target_num = num
+                        st.session_state.target_den = den
+                        st.rerun()
+                    fig = render_plotly_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=240)
+                    if fig: st.plotly_chart(fig, use_container_width=True, key=f"glb_c_{idx}", config=STATIC_CONFIG)
+                    
+        with macro_tabs[3]:
+            st.caption("Your most recently analyzed charts")
+            if not st.session_state.recent_ratios: st.info("No recent charts. Analyze ratios in the Dynamic Explorer to see them here.")
+            else:
+                cols = st.columns(2)
+                for idx, (num, den) in enumerate(st.session_state.recent_ratios):
+                    with cols[idx % 2], st.container(border=True):
+                        h1, h2, h3 = st.columns([6, 1.5, 1.5])
+                        h1.markdown(f"**{num}** / {den}" if den != "None" else f"**{num}**")
+                        if h2.button("⛶", key=f"rec_mod_{idx}"): expand_chart_modal(num, den)
+                        if h3.button("🔍", key=f"rec_exp_{idx}"):
+                            st.session_state.target_num = num
+                            st.session_state.target_den = den
+                            st.rerun()
+                        fig = render_plotly_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
+                        if fig: st.plotly_chart(fig, use_container_width=True, key=f"rec_c_{idx}", config=STATIC_CONFIG)
+
+    with col_news:
+        st.subheader("📋 Watchlists")
+        with st.container(border=True):
+            active_wl = st.selectbox("Select", list(st.session_state.watchlists.keys()), index=list(st.session_state.watchlists.keys()).index(st.session_state.active_wl), label_visibility="collapsed", key="wl_sel")
+            st.session_state.active_wl = active_wl
+            
+            wl_data = fetch_bulk_watchlist(st.session_state.watchlists[active_wl])
+            if not wl_data.empty:
+                df = pd.DataFrame(wl_data)
+                df['Price'] = df.apply(lambda row: f"{CURRENCY_MAP.get(row['Asset'], '')}{row['Price']:.2f}", axis=1)
+                styled_df = df.style.map(lambda x: 'color: #089981; font-weight: bold;' if x > 0 else 'color: #f23645; font-weight: bold;' if x < 0 else '', subset=['Chg %']).format({"Chg %": "{:+.2f}%"})
+                event = st.dataframe(styled_df, hide_index=True, use_container_width=True, on_select="rerun", selection_mode="single-row", key="wl_df")
+                if len(event.selection.rows) > 0:
+                    selected_asset = df.iloc[event.selection.rows[0]]["Asset"]
+                    st.session_state.target_num = selected_asset
+                    st.session_state.target_den = "None"
+                    st.rerun()
+
+        st.subheader("📰 Sentiment Feed")
+        with st.container(border=True, height=350):
+            news = fetch_market_news(st.session_state.target_num)
+            for item in news:
+                st.markdown(f"{item['tag']} **[{item['title']}]({item['link']})**")
+                st.caption(f"🕒 {item.get('published', 'Recent').replace('+0000', '').strip()}")
+                st.markdown("---")
+
+# --- SCREEN 2: DYNAMIC EXPLORER ---
+with tab2:
+    col_dyn_main, col_dyn_news = st.columns([3, 1]) 
+    
+    with col_dyn_main:
+        c1, c2, c3 = st.columns([3, 1, 1])
+        
+        current_pair = (st.session_state.target_num, st.session_state.target_den)
+        if current_pair in st.session_state.recent_ratios: st.session_state.recent_ratios.remove(current_pair)
+        st.session_state.recent_ratios.insert(0, current_pair)
+        st.session_state.recent_ratios = st.session_state.recent_ratios[:6]
+        
+        if st.session_state.target_num != "None":
+            tkr = st.session_state.asset_dict[st.session_state.target_num]
+            data = fetch_yahoo_data(tkr, "5d", "1d")
+            curr = CURRENCY_MAP.get(st.session_state.target_num, "")
+            if data is not None and not data.empty and len(data) >= 2:
+                last_px, prev_px = data['Close'].iloc[-1], data['Close'].iloc[-2]
+                pct_chg = ((last_px - prev_px) / prev_px) * 100
+                clr = "#089981" if pct_chg >= 0 else "#f23645"
+                sgn = "+" if pct_chg >= 0 else ""
+                
+                header_title = f"{st.session_state.target_num} / {st.session_state.target_den}" if st.session_state.target_den != "None" else f"{st.session_state.target_num}"
+                c1.markdown(f"<h3 style='margin-bottom:0;'>{header_title} &nbsp;<span style='color:{clr}; font-size:1.3rem;'>{curr}{last_px:,.2f} ({sgn}{pct_chg:.2f}%)</span></h3>", unsafe_allow_html=True)
+                
+                if st.session_state.target_den == "None":
+                    funds = fetch_fundamentals(tkr)
+                    if funds:
+                        st.markdown(f"""
+                        <div class='tear-sheet'>
+                            <div><span class='tear-val'>52W High:</span> {curr}{funds['52W High']}</div>
+                            <div><span class='tear-val'>52W Low:</span> {curr}{funds['52W Low']}</div>
+                            <div><span class='tear-val'>Mkt Cap:</span> {curr}{funds['Mkt Cap']}</div>
+                            <div><span class='tear-val'>P/E (TTM):</span> {funds['P/E (TTM)']}</div>
+                            <div><span class='tear-val'>Div Yield:</span> {funds['Div Yield']}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+            else: c1.subheader(f"{st.session_state.target_num}")
+        else: c1.subheader("No Assets Selected")
+        
+        with c2:
+            is_saved = current_pair in st.session_state.fav_ratios
+            btn_label = "✅ Saved" if is_saved else "⭐ Save Ratio"
+            if st.button(btn_label, disabled=is_saved, use_container_width=True):
+                st.session_state.fav_ratios.append(current_pair)
+                st.rerun()
+                
+        with c3:
+            if st.button("🗑️ Clear Screen", use_container_width=True): st.rerun()
+
+        st.caption("💡 *You are now using the ultra-high-performance **TradingView Lightweight Charts** engine. Scroll to zoom, click and drag to pan.*")
+        with st.spinner("Rendering WebGL Engine..."):
+            html_payload, height_px = render_tv_lightweight(
+                st.session_state.target_num, st.session_state.target_den, 
+                timeframe, interval_selection, chart_type, 
+                selected_overlays, selected_oscillators, show_volume, analysis_mode.split()[0]
+            )
+            if html_payload:
+                components.html(html_payload, height=height_px, scrolling=False)
+            
+        if st.session_state.target_num != "None":
+            with st.expander("📅 Historical Seasonality Matrix (Monthly % Returns)", expanded=False):
+                with st.spinner("Calculating Seasonality..."):
+                    try:
+                        s_data = fetch_yahoo_data(st.session_state.asset_dict[st.session_state.target_num], "5y", "1d")
+                        if s_data is not None and not s_data.empty:
+                            s_data['Year'] = s_data.index.year
+                            s_data['Month'] = s_data.index.month
+                            monthly_rtn = s_data.groupby(['Year', 'Month'])['Close'].apply(lambda x: (x.iloc[-1]/x.iloc[0] - 1)*100).unstack()
+                            monthly_rtn.columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                            
+                            fig_sea = go.Figure(data=go.Heatmap(
+                                z=monthly_rtn.values, x=monthly_rtn.columns, y=monthly_rtn.index,
+                                colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
+                                text=monthly_rtn.round(2).fillna("").astype(str) + "%", texttemplate="%{text}", textfont={"color":"#131722"},
+                                zmid=0, showscale=False
+                            ))
+                            fig_sea.update_layout(height=250, margin=dict(l=10, r=10, t=30, b=10), template="plotly_white")
+                            fig_sea.update_yaxes(autorange="reversed", type='category')
+                            st.plotly_chart(fig_sea, use_container_width=True, config={'displayModeBar': False})
+                    except: st.caption("Seasonality data unavailable for this asset.")
+
+    with col_dyn_news:
+        st.subheader("📋 Watchlists")
+        with st.container(border=True):
+            active_wl = st.selectbox("Select", list(st.session_state.watchlists.keys()), index=list(st.session_state.watchlists.keys()).index(st.session_state.active_wl), label_visibility="collapsed", key="wl_sel_dyn")
+            st.session_state.active_wl = active_wl
+            
+            wl_data = fetch_bulk_watchlist(st.session_state.watchlists[active_wl])
+            if not wl_data.empty:
+                df = pd.DataFrame(wl_data)
+                df['Price'] = df.apply(lambda row: f"{CURRENCY_MAP.get(row['Asset'], '')}{row['Price']:.2f}", axis=1)
+                styled_df = df.style.map(lambda x: 'color: #089981; font-weight: bold;' if x > 0 else 'color: #f23645; font-weight: bold;' if x < 0 else '', subset=['Chg %']).format({"Chg %": "{:+.2f}%"})
+                event = st.dataframe(styled_df, hide_index=True, use_container_width=True, on_select="rerun", selection_mode="single-row", key="wl_df_dyn")
+                if len(event.selection.rows) > 0:
+                    selected_asset = df.iloc[event.selection.rows[0]]["Asset"]
+                    st.session_state.target_num = selected_asset
+                    st.session_state.target_den = "None"
+                    st.rerun()
+
+        st.subheader("📰 Sentiment Feed")
+        with st.container(border=True, height=350):
+            news = fetch_market_news(st.session_state.target_num)
+            for item in news:
+                st.markdown(f"{item['tag']} **[{item['title']}]({item['link']})**")
+                st.caption(f"🕒 {item.get('published', 'Recent').replace('+0000', '').strip()}")
+                st.markdown("---")
+
+# --- SCREEN 3: CORRELATION MATRIX ---
+with tab3:
+    st.subheader("🧮 Active Watchlist Correlation Matrix (6-Month Daily Returns)")
+    st.caption(f"Analyzing cross-asset correlations for list: **{st.session_state.active_wl}**")
+    
+    with st.spinner("Processing Matrix..."):
+        curr_wl = st.session_state.watchlists[st.session_state.active_wl]
+        if len(curr_wl) < 2:
+            st.warning("Please add at least 2 assets to your active watchlist to calculate correlation.")
+        else:
+            try:
+                tkr_list = list(curr_wl.values())
+                name_list = list(curr_wl.keys())
+                corr_data = yf.download(tkr_list, period="6mo", interval="1d", progress=False)['Close']
+                
+                if isinstance(corr_data, pd.Series): corr_data = corr_data.to_frame()
+                corr_data.columns = name_list 
+                
+                corr_matrix = corr_data.pct_change().corr().round(2)
+                
+                fig_corr = go.Figure(data=go.Heatmap(
+                    z=corr_matrix.values, x=corr_matrix.columns, y=corr_matrix.index,
+                    colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
+                    text=corr_matrix.values, texttemplate="%{text}",
+                    zmin=-1, zmax=1, zmid=0
+                ))
+                fig_corr.update_layout(height=600, template="plotly_white", margin=dict(l=10, r=10, t=10, b=10))
+                fig_corr.update_yaxes(autorange="reversed")
+                st.plotly_chart(fig_corr, use_container_width=True, config={'displayModeBar': False})
+            except Exception as e:
+                st.error("Could not calculate correlation. Please ensure active assets have valid history.")
+
+# --- TELEMETRY ---
+st.markdown("---")
+latency = round(time.time() - start_time, 2)
+st.caption(f"🟢 **System:** Online | ⏱️ **Latency:** {latency}s | 📡 **Engines:** YF API + TV WebGL | 🕒 **Sync:** {pd.Timestamp.now().strftime('%H:%M:%S UTC')} | 📦 **Assets:** {len(st.session_state.asset_dict)}")
