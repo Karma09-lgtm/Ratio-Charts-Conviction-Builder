@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 from plotly.subplots import make_subplots
 import time
 import feedparser
@@ -102,7 +103,6 @@ if 'recent_ratios' not in st.session_state: st.session_state.recent_ratios = []
 # --- SIDEBAR: OMNIBOX & CONTROLS ---
 st.sidebar.title("⚙️ Terminal Setup")
 
-# 1. THE OMNIBOX
 st.sidebar.markdown("**💻 Command Line**")
 with st.sidebar.form(key="omni_form", clear_on_submit=True):
     col_cmd, col_btn = st.columns([3, 1])
@@ -177,6 +177,7 @@ with st.sidebar.expander("📈 Technicals & Overlays", expanded=True):
     show_volume = st.checkbox("Show Volume Bar", value=True)
     selected_overlays = st.multiselect("Overlays", ["21 EMA", "50 SMA", "200 EMA", "AVWAP"], default=["50 SMA"])
     selected_oscillators = st.multiselect("Oscillators", ["Volume", "RSI (14)", "MACD (12, 26, 9)", "Drawdown %"], default=["Volume"])
+
 
 # --- HELPERS & DATA ENGINES ---
 def format_large_number(num):
@@ -437,12 +438,12 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
             data = [{"time": d.strftime('%Y-%m-%d'), "value": float(v)} for d, v in temp_osc['Drawdown'].items()]
             osc_js += f"createSubchart('{div_id}', 'Drawdown %', 'area', {json.dumps(data)}, '#f23645');\n"
 
-    # WebGL payload with Failsafe Catch Blocks
+    # WebGL payload with PINNED CDN VERSION for stability
     html = f"""
     <!DOCTYPE html>
     <html>
     <head>
-        <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+        <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
         <style>
             body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #ffffff; overflow: hidden; }}
             .chart-container {{ width: 100%; display: flex; flex-direction: column; }}
@@ -475,6 +476,10 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
                 let mainSeries;
                 if('{c_type}' === 'Line') {{
                     mainSeries = mainChart.addLineSeries({{ color: '{'#E91E63' if analysis_mode == "Correlation" else '#2962FF'}', lineWidth: 2 }});
+                }} else if ('{c_type}' === 'Bar (OHLC)') {{
+                    mainSeries = mainChart.addBarSeries({{
+                        upColor: '#089981', downColor: '#f23645', thinBars: false
+                    }});
                 }} else {{
                     mainSeries = mainChart.addCandlestickSeries({{
                         upColor: '#089981', downColor: '#f23645', borderVisible: false,
