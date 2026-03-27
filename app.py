@@ -21,35 +21,52 @@ st.markdown("""
 <style>
     .stApp { background-color: #f8f9fd; color: #131722; font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
+    
     [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
         background-color: #ffffff; border-radius: 8px; border: 1px solid #e0e3eb; padding: 12px; box-shadow: 0px 2px 4px rgba(19, 23, 34, 0.03);
     }
+    
+    /* Custom Programmatic Tabs */
     div[role="radiogroup"] { flex-direction: row; gap: 2rem; border-bottom: 2px solid #e0e3eb; margin-bottom: 20px;}
     div[role="radiogroup"] label { margin: 0 !important; cursor: pointer; }
     div[role="radiogroup"] label span[data-baseweb="radio"] { display: none !important; } 
     div[role="radiogroup"] label div[dir="auto"] { font-size: 1.1rem; font-weight: 600; color: #787b86; padding: 10px 5px; transition: 0.2s;}
     div[role="radiogroup"] label[data-checked="true"] div[dir="auto"] { color: #2962FF !important; border-bottom: 2px solid #2962FF !important; }
+    
+    /* Hides Streamlit's native "Press Enter to apply" hint in text boxes */
     [data-testid="InputInstructions"] { display: none !important; }
+    
     [data-testid="stMetricValue"] { font-size: 1.35rem !important; font-weight: 700; color: #131722; margin-top: -15px;}
     [data-testid="stMetricDelta"] { margin-top: -5px; }
     [data-testid="stMetricDelta"] svg { display: none; }
+    
     [data-testid="stDataFrame"] { border: none !important; }
     [data-testid="stDataFrame"] div[data-testid="stCheckbox"] { display: none !important; }
+    
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #f0f3fa; }
     ::-webkit-scrollbar-thumb { background: #c1c4cd; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #a1a5af; }
+    
     h1, h2, h3, h4, h5, h6 { color: #131722 !important; font-weight: 600 !important; }
     hr { border-color: #e0e3eb; margin-top: 10px; margin-bottom: 10px;}
-    .stButton > button { border: 1px solid #e0e3eb; background-color: #ffffff; color: #787b86; transition: 0.2s; width: 100%; border-radius: 6px; padding: 4px 8px; font-weight: 500;}
+    
+    /* Standard Button styling */
+    .stButton > button { border: 1px solid #e0e3eb; background-color: #ffffff; color: #787b86; transition: 0.2s; width: 100%; border-radius: 6px; padding: 6px 12px; font-weight: 500;}
     .stButton > button:hover { border: 1px solid #2962FF; color: #2962FF; background-color: #f0f3fa;}
+    .stButton > button:disabled { border: 1px solid #e0e3eb; background-color: #f8f9fd; color: #089981; font-weight: 600; opacity: 1; }
+    
+    /* Primary CTA Button styling */
+    button[data-testid="baseButton-primary"] { background-color: #2962FF !important; color: #ffffff !important; border: none !important; padding: 8px 16px !important; font-weight: 600 !important; border-radius: 6px !important; }
+    button[data-testid="baseButton-primary"]:hover { background-color: #1E4BD8 !important; }
+
     .tear-sheet { font-size: 0.85rem; color: #787b86; display: flex; gap: 15px; margin-top: -10px; margin-bottom: 15px; padding: 10px; background: #f8f9fd; border-radius: 6px; border: 1px solid #e0e3eb;}
     .tear-val { font-weight: 700; color: #131722; }
     .share-btn { display: inline-block; padding: 8px 12px; margin-bottom: 8px; border-radius: 4px; background: #ffffff; border: 1px solid #e0e3eb; color: #131722; text-decoration: none; font-size: 0.9rem; font-weight: 600; width: 100%; text-align: left; transition: 0.2s;}
     .share-btn:hover { background: #f0f3fa; border-color: #2962FF; color: #2962FF;}
+    
     .ai-box { background: #F8F9FA; border-left: 4px solid #2962FF; padding: 15px 20px; border-radius: 0px 8px 8px 0px; font-size: 0.95rem; color: #333; line-height: 1.6; margin-top: 15px; margin-bottom: 20px;}
     .ai-title { font-weight: 700; color: #131722; margin-bottom: 8px; font-size: 1.05rem; }
-    .auth-box { max-width: 400px; margin: 0 auto; padding: 30px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #e0e3eb; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -151,64 +168,76 @@ init_db()
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
 if not st.session_state.logged_in:
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns([1, 1.2, 1])
-    with c2:
-        st.markdown("<div class='auth-box'>", unsafe_allow_html=True)
-        st.title("🌍 Karma Analytics Terminal")
-        st.caption("Sign in to access your macro workspaces and watchlists.")
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    
+    col_spacer1, col_main, col_spacer2 = st.columns([1, 1.2, 1])
+    with col_main:
+        # Premium Brand Header
+        st.markdown("""
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h1 style="font-size: 2.6rem; font-weight: 800; color: #131722; margin-bottom: 0px;">🌍 Karma Analytics</h1>
+                <p style="font-size: 1.1rem; color: #787b86; font-weight: 500; margin-top: 5px;">Institutional Macro Conviction Terminal</p>
+            </div>
+        """, unsafe_allow_html=True)
         
-        tab_login, tab_signup, tab_admin = st.tabs(["Sign In", "Create Account", "Admin Access"])
-        
-        with tab_login:
-            log_user = st.text_input("Username", key="log_u").strip()
-            log_pw = st.text_input("Password", type="password", key="log_p")
-            if st.button("Access Terminal", use_container_width=True):
-                if authenticate_user(log_user, log_pw):
-                    st.session_state.logged_in = True
-                    st.session_state.username = log_user
-                    st.session_state.is_admin = (log_user.lower() == "admin")
-                    # Load DB preferences
-                    favs, wls, layout = load_user_prefs(log_user)
-                    st.session_state.fav_ratios = [tuple(x) for x in favs]
-                    st.session_state.watchlists = wls
-                    st.session_state.show_ticker = layout.get("ticker", True)
-                    st.session_state.show_fav = layout.get("fav", True)
-                    st.session_state.show_news = layout.get("news", True)
-                    st.rerun()
-                else:
-                    st.error("Invalid credentials.")
-                    
-        with tab_signup:
-            sign_user = st.text_input("Choose Username", key="sign_u").strip()
-            sign_pw = st.text_input("Choose Password", type="password", key="sign_p")
-            if st.button("Create Account", use_container_width=True):
-                if len(sign_user) < 3: st.error("Username too short.")
-                elif len(sign_pw) < 4: st.error("Password too weak.")
-                else:
-                    if create_user(sign_user, sign_pw):
-                        st.success("Account created! Please sign in.")
+        # Professional Auth Card
+        with st.container(border=True):
+            tab_login, tab_signup, tab_admin = st.tabs(["🔐 Sign In", "✨ Create Account", "🛠️ Admin Bypass"])
+            
+            with tab_login:
+                st.markdown("<div style='padding: 10px 0;'></div>", unsafe_allow_html=True)
+                log_user = st.text_input("Username", key="log_u", placeholder="Enter your username").strip()
+                log_pw = st.text_input("Password", type="password", key="log_p", placeholder="••••••••")
+                st.markdown("<div style='padding: 10px 0;'></div>", unsafe_allow_html=True)
+                if st.button("Access Terminal ⚡", use_container_width=True, type="primary"):
+                    if authenticate_user(log_user, log_pw):
+                        st.session_state.logged_in = True
+                        st.session_state.username = log_user
+                        st.session_state.is_admin = (log_user.lower() == "admin")
+                        # Load DB preferences
+                        favs, wls, layout = load_user_prefs(log_user)
+                        st.session_state.fav_ratios = [tuple(x) for x in favs]
+                        st.session_state.watchlists = wls
+                        st.session_state.show_ticker = layout.get("ticker", True)
+                        st.session_state.show_fav = layout.get("fav", True)
+                        st.session_state.show_news = layout.get("news", True)
+                        st.rerun()
                     else:
-                        st.error("Username already exists.")
+                        st.error("Invalid credentials. Please try again.")
                         
-        with tab_admin:
-            st.markdown("#### System Administrator Bypass")
-            admin_pw = st.text_input("Master Passcode", type="password", key="admin_override_pw")
-            if st.button("Enter Admin Mode", use_container_width=True):
-                if admin_pw == "admin123": # <--- Master passcode
-                    st.session_state.logged_in = True
-                    st.session_state.username = "Administrator" # Ghost session
-                    st.session_state.is_admin = True
-                    st.session_state.fav_ratios = [("Gold (Spot)", "S&P 500"), ("Nasdaq 100", "Russell 2000")]
-                    st.session_state.watchlists = DEFAULT_WATCHLISTS.copy()
-                    st.session_state.show_ticker = True
-                    st.session_state.show_fav = True
-                    st.session_state.show_news = True
-                    st.rerun()
-                else:
-                    st.error("Invalid System Passcode.")
-                    
-        st.markdown("</div>", unsafe_allow_html=True)
+            with tab_signup:
+                st.markdown("<div style='padding: 10px 0;'></div>", unsafe_allow_html=True)
+                sign_user = st.text_input("Choose Username", key="sign_u", placeholder="Minimum 3 characters").strip()
+                sign_pw = st.text_input("Choose Password", type="password", key="sign_p", placeholder="Minimum 4 characters")
+                st.markdown("<div style='padding: 10px 0;'></div>", unsafe_allow_html=True)
+                if st.button("Register Account", use_container_width=True, type="primary"):
+                    if len(sign_user) < 3: st.error("Username too short.")
+                    elif len(sign_pw) < 4: st.error("Password too weak.")
+                    else:
+                        if create_user(sign_user, sign_pw):
+                            st.success("Account successfully created! You may now sign in.")
+                        else:
+                            st.error("Username already exists. Please choose another.")
+                            
+            with tab_admin:
+                st.markdown("<div style='padding: 10px 0;'></div>", unsafe_allow_html=True)
+                st.info("System administrator access. Telemetry and user management capabilities enabled.")
+                admin_pw = st.text_input("Master Passcode", type="password", key="admin_override_pw", placeholder="Enter root passcode")
+                st.markdown("<div style='padding: 10px 0;'></div>", unsafe_allow_html=True)
+                if st.button("Authenticate Admin", use_container_width=True, type="primary"):
+                    if admin_pw == "admin123": # <--- Master passcode
+                        st.session_state.logged_in = True
+                        st.session_state.username = "Administrator" # Ghost session
+                        st.session_state.is_admin = True
+                        st.session_state.fav_ratios = [("Gold (Spot)", "S&P 500"), ("Nasdaq 100", "Russell 2000")]
+                        st.session_state.watchlists = DEFAULT_WATCHLISTS.copy()
+                        st.session_state.show_ticker = True
+                        st.session_state.show_fav = True
+                        st.session_state.show_news = True
+                        st.rerun()
+                    else:
+                        st.error("Invalid System Passcode.")
+                        
     st.stop() # Halts script execution until logged in
 
 
