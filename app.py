@@ -122,9 +122,8 @@ if omni_submit and omni_cmd:
             if len(num_part_split) > 1:
                 tf = num_part_split[1].lower()
                 if tf in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: st.session_state.target_period = tf
-        st.toast(f"Loaded: {st.session_state.target_num}", icon="🚀")
         st.rerun() 
-    except Exception: st.toast("Command error.", icon="⚠️")
+    except: pass
 
 with st.sidebar.expander("🧹 Data & History Management", expanded=False):
     st.caption("Wipe local cache and force fresh data pull.")
@@ -138,20 +137,20 @@ with st.sidebar.expander("🧹 Data & History Management", expanded=False):
 st.sidebar.markdown("---")
 
 with st.sidebar.expander("⚙️ Asset Selection", expanded=True):
-    asset_options = ["None"] + list(st.session_state.asset_dict.keys())
-    idx_num = asset_options.index(st.session_state.target_num) if st.session_state.target_num in asset_options else 1
-    idx_den = asset_options.index(st.session_state.target_den) if st.session_state.target_den in asset_options else 0
+    asset_opts = ["None"] + list(st.session_state.asset_dict.keys())
+    idx_n = asset_opts.index(st.session_state.target_num) if st.session_state.target_num in asset_opts else 1
+    idx_d = asset_opts.index(st.session_state.target_den) if st.session_state.target_den in asset_opts else 0
 
-    col_assets, col_inv = st.columns([5, 1])
-    with col_assets:
-        selected_num = st.selectbox("Numerator", asset_options, index=idx_num) 
-        selected_den = st.selectbox("Denominator", asset_options, index=idx_den) 
-        if selected_num != st.session_state.target_num or selected_den != st.session_state.target_den:
-            st.session_state.target_num, st.session_state.target_den = selected_num, selected_den
+    c_a, c_i = st.columns([5, 1])
+    with c_a:
+        sel_num = st.selectbox("Numerator", asset_opts, index=idx_n) 
+        sel_den = st.selectbox("Denominator", asset_opts, index=idx_d) 
+        if sel_num != st.session_state.target_num or sel_den != st.session_state.target_den:
+            st.session_state.target_num, st.session_state.target_den = sel_num, sel_den
             st.rerun()
-    with col_inv:
+    with c_i:
         st.markdown("<div style='margin-top: 36px;'></div>", unsafe_allow_html=True)
-        if st.button("🔄", help="Invert Ratio", use_container_width=True):
+        if st.button("🔄", use_container_width=True):
             st.session_state.target_num, st.session_state.target_den = st.session_state.target_den, st.session_state.target_num
             st.rerun()
             
@@ -159,20 +158,20 @@ with st.sidebar.expander("⚙️ Asset Selection", expanded=True):
 
 with st.sidebar.expander("⏱️ Time & Style", expanded=True):
     c1, c2 = st.columns(2)
-    tf_options = ("1mo", "3mo", "6mo", "1y", "2y", "5y", "max")
-    idx_tf = tf_options.index(st.session_state.target_period) if st.session_state.target_period in tf_options else 3
+    tfs = ("1mo", "3mo", "6mo", "1y", "2y", "5y", "max")
+    idx_tf = tfs.index(st.session_state.target_period) if st.session_state.target_period in tfs else 3
     with c1: 
-        timeframe = st.selectbox("Data Fetch", tf_options, index=idx_tf)
-        if timeframe != st.session_state.target_period:
-            st.session_state.target_period = timeframe
+        sel_tf = st.selectbox("Data Fetch", tfs, index=idx_tf)
+        if sel_tf != st.session_state.target_period:
+            st.session_state.target_period = sel_tf
             st.rerun()
     with c2: interval_selection = st.selectbox("Interval", ("1d", "1wk", "1mo"))
     chart_type = st.selectbox("Style", ("Candlestick", "Bar (OHLC)", "Line"))
 
 with st.sidebar.expander("🎨 Drawing Toolbox (Dynamic Chart)", expanded=True):
     c_color, c_width = st.columns([1, 2])
-    with c_color: draw_color = st.color_picker("Color", "#2962FF")
-    with c_width: draw_width = st.slider("Thickness", 1, 5, 2)
+    with c_color: st.session_state.draw_color = st.color_picker("Color", st.session_state.get("draw_color", "#2962FF"))
+    with c_width: st.session_state.draw_width = st.slider("Thickness", 1, 5, st.session_state.get("draw_width", 2))
 
 with st.sidebar.expander("📈 Technicals & Overlays", expanded=True):
     show_volume = st.checkbox("Show Volume Bar", value=True)
@@ -242,22 +241,23 @@ def fetch_bulk_watchlist(tickers_dict):
 def fetch_market_news(keyword="None"):
     urls = ["https://feeds.a.dj.com/rss/RSSMarketsMain.xml", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664"]
     news, seen = [], set()
-    base_kws = ['rate', 'yield', 'treasury', 'inflation', 'fed', 'bank', 'earnings']
+    base_kws = ['rate', 'yield', 'treasury', 'inflation', 'fed', 'rbi', 'bank', 'earnings']
     if keyword != "None": base_kws.append(keyword.lower().split(" ")[0]) 
     for url in urls:
         try:
-            for entry in feedparser.parse(url).entries[:25]:
+            for entry in feedparser.parse(url).entries[:20]:
                 t = entry.title.lower()
                 if entry.title not in seen and any(kw in t for kw in base_kws):
-                    tag = "🟢" if sum(1 for w in ['surge', 'jump', 'rise', 'gain'] if w in t) > sum(1 for w in ['plunge', 'drop', 'fall', 'cut'] if w in t) else "🔴"
-                    news.append({"title": entry.title, "link": entry.link, "published": entry.get("published", "Recent"), "tag": tag})
+                    bull = sum(1 for w in ['surge', 'jump', 'rise', 'beat', 'gain'] if w in t)
+                    bear = sum(1 for w in ['plunge', 'drop', 'fall', 'miss', 'cut'] if w in t)
+                    news.append({"title": entry.title, "link": entry.link, "published": entry.get("published", "Recent"), "tag": "🟢" if bull>bear else "🔴" if bear>bull else "⚪"})
                     seen.add(entry.title)
         except: continue
     return news[:10]
 
 
 # --- UNIVERSAL TRADINGVIEW ENGINE ---
-def generate_tv_html(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol, analysis_mode, show_hud=True, base_height=500, enable_drawing=False):
+def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol, analysis_mode, show_hud=True, base_height=500, enable_drawing=False):
     if num_name == "None" and den_name == "None": 
         return "<div style='padding:20px; text-align:center; color:#787b86; font-family:sans-serif;'>No assets selected.</div>", base_height
     
@@ -274,11 +274,11 @@ def generate_tv_html(num_name, den_name, period_str, interval_str, c_type, overl
         den_data = pd.DataFrame(1, index=base_df.index, columns=['Open', 'High', 'Low', 'Close'])
         if 'Volume' in base_df.columns: den_data['Volume'] = 1
 
-    df = pd.merge(num_data, den_data, left_index=True, right_index=True, suffixes=('_num', '_den')).dropna()
-    if df.empty: return "<div style='padding:20px; text-align:center; color:#f23645; font-family:sans-serif;'>Data unavailable.</div>", base_height
+    df = pd.merge(num_data, den_data, left_index=True, right_index=True, suffixes=('_num', '_den'))
     
+    # STRICT STERILIZATION (CRITICAL FOR JS STABILITY)
+    df = df.ffill().bfill() 
     df = df[~df.index.duplicated(keep='first')].sort_index()
-    df = df.replace([np.inf, -np.inf], np.nan)
 
     if analysis_mode == "Correlation" and num_name != "None" and den_name != "None":
         c = df['Close_num'].pct_change().rolling(20).corr(df['Close_den'].pct_change())
@@ -291,6 +291,8 @@ def generate_tv_html(num_name, den_name, period_str, interval_str, c_type, overl
         df['Ratio_Low'] = df['Low_num'] / df['Low_den']
         df['Ratio_Close'] = df['Close_num'] / df['Close_den']
         
+    df.replace([np.inf, -np.inf], np.nan, inplace=True)
+
     colors = {"21 EMA": "#FF9800", "50 SMA": "#2962FF", "200 EMA": "#F44336", "AVWAP": "#000000"}
     for ind in overlays:
         if ind == "50 SMA": df[ind] = df['Ratio_Close'].rolling(50).mean()
@@ -310,18 +312,19 @@ def generate_tv_html(num_name, den_name, period_str, interval_str, c_type, overl
             df['Peak'] = df['Ratio_Close'].cummax()
             df['Drawdown'] = ((df['Ratio_Close'] - df['Peak']) / df['Peak']) * 100
 
+    # SAFE JSON EXPORT (DROP NANS ONLY PER SERIES)
     if analysis_mode == "Correlation" or c_type == "Line":
-        temp_main = df.dropna(subset=['Ratio_Close'])
-        main_data = [{"time": d.strftime('%Y-%m-%d'), "value": float(row['Ratio_Close'])} for d, row in temp_main.iterrows()]
+        temp = df[['Ratio_Close']].dropna()
+        main_data = [{"time": d.strftime('%Y-%m-%d'), "value": float(row['Ratio_Close'])} for d, row in temp.iterrows()]
         c_type = "Line"
     else:
-        temp_main = df.dropna(subset=['Ratio_Open', 'Ratio_High', 'Ratio_Low', 'Ratio_Close'])
-        main_data = [{"time": d.strftime('%Y-%m-%d'), "open": float(row['Ratio_Open']), "high": float(row['Ratio_High']), "low": float(row['Ratio_Low']), "close": float(row['Ratio_Close'])} for d, row in temp_main.iterrows()]
+        temp = df[['Ratio_Open', 'Ratio_High', 'Ratio_Low', 'Ratio_Close']].dropna()
+        main_data = [{"time": d.strftime('%Y-%m-%d'), "open": float(row['Ratio_Open']), "high": float(row['Ratio_High']), "low": float(row['Ratio_Low']), "close": float(row['Ratio_Close'])} for d, row in temp.iterrows()]
 
     has_volume = "Volume" in oscillators and 'Volume_num' in df.columns
     vol_data = []
     if show_vol and has_volume:
-        temp_vol = df.dropna(subset=['Volume_num'])
+        temp_vol = df[['Volume_num', 'Ratio_Close', 'Ratio_Open']].dropna(subset=['Volume_num'])
         for d, row in temp_vol.iterrows():
             c = '#08998180' if row.get('Ratio_Close', 0) >= row.get('Ratio_Open', 0) else '#f2364580'
             vol_data.append({"time": d.strftime('%Y-%m-%d'), "value": float(row['Volume_num']), "color": c})
@@ -329,7 +332,7 @@ def generate_tv_html(num_name, den_name, period_str, interval_str, c_type, overl
     overlay_js = ""
     for ind in overlays:
         if ind in df.columns:
-            temp_line = df.dropna(subset=[ind])
+            temp_line = df[[ind]].dropna()
             line_data = [{"time": d.strftime('%Y-%m-%d'), "value": float(v)} for d, v in temp_line[ind].items()]
             overlay_js += f"const l_{ind.replace(' ', '')} = mainChart.addLineSeries({{ color: '{colors.get(ind, '#000')}', lineWidth: 2, title: '{ind}', crosshairMarkerVisible: false }}); l_{ind.replace(' ', '')}.setData({json.dumps(line_data)});\n"
 
@@ -337,24 +340,27 @@ def generate_tv_html(num_name, den_name, period_str, interval_str, c_type, overl
     for i, osc in enumerate(active_osc):
         div_id = f"subchart_{i}"
         if osc == "RSI (14)":
-            temp_osc = df.dropna(subset=['RSI'])
+            temp_osc = df[['RSI']].dropna()
             data = [{"time": d.strftime('%Y-%m-%d'), "value": float(v)} for d, v in temp_osc['RSI'].items()]
             osc_js += f"createSubchart('{div_id}', 'RSI', 'line', {json.dumps(data)}, '#7E57C2');\n"
         elif osc == "MACD (12, 26, 9)":
-            temp_osc = df.dropna(subset=['MACD_Line', 'MACD_Signal', 'MACD_Hist'])
+            temp_osc = df[['MACD_Line', 'MACD_Signal', 'MACD_Hist']].dropna()
             m_line = [{"time": d.strftime('%Y-%m-%d'), "value": float(v)} for d, v in temp_osc['MACD_Line'].items()]
             m_sig = [{"time": d.strftime('%Y-%m-%d'), "value": float(v)} for d, v in temp_osc['MACD_Signal'].items()]
             m_hist = [{"time": d.strftime('%Y-%m-%d'), "value": float(v), "color": '#089981' if v>=0 else '#f23645'} for d, v in temp_osc['MACD_Hist'].items()]
             osc_js += f"createMacdChart('{div_id}', {json.dumps(m_line)}, {json.dumps(m_sig)}, {json.dumps(m_hist)});\n"
         elif osc == "Drawdown %":
-            temp_osc = df.dropna(subset=['Drawdown'])
+            temp_osc = df[['Drawdown']].dropna()
             data = [{"time": d.strftime('%Y-%m-%d'), "value": float(v)} for d, v in temp_osc['Drawdown'].items()]
             osc_js += f"createSubchart('{div_id}', 'Drawdown %', 'area', {json.dumps(data)}, '#f23645');\n"
 
     hud_display = "block" if show_hud else "none"
     title_text = f"{num_name}" + (f" / {den_name}" if den_name != "None" else "")
 
-    # Inject custom drawing layer if requested
+    # Inject custom drawing layer if requested using session state styling
+    d_color = st.session_state.get('draw_color', '#2962FF')
+    d_width = st.session_state.get('draw_width', 2)
+    
     drawing_html = ""
     drawing_js = ""
     if enable_drawing:
@@ -376,8 +382,8 @@ def generate_tv_html(num_name, den_name, period_str, interval_str, c_type, overl
         let isDrawing = false;
         let startPoint = null;
         let currentMouse = null;
-        let dColor = '{draw_color}';
-        let dWidth = {draw_width};
+        let dColor = '{d_color}';
+        let dWidth = {d_width};
 
         function setTool(t) {{
             tool = t;
@@ -415,7 +421,6 @@ def generate_tv_html(num_name, den_name, period_str, interval_str, c_type, overl
                 const mx = e.clientX - rect.left;
                 const my = e.clientY - rect.top;
                 
-                // Simple distance checking to erase
                 drawings = drawings.filter(d => {{
                     if(d.type === 'text') {{
                         let px = mainChart.timeScale().logicalToCoordinate(d.p.logical);
@@ -426,7 +431,6 @@ def generate_tv_html(num_name, den_name, period_str, interval_str, c_type, overl
                         let y1 = mainSeries.priceToCoordinate(d.p1.price);
                         let x2 = mainChart.timeScale().logicalToCoordinate(d.p2.logical);
                         let y2 = mainSeries.priceToCoordinate(d.p2.price);
-                        // Math to distance from point to line segment
                         let l2 = (x1-x2)*(x1-x2) + (y1-y2)*(y1-y2);
                         if (l2 == 0) return Math.hypot(x1-mx, y1-my) > 10;
                         let t = Math.max(0, Math.min(1, ((mx - x1) * (x2 - x1) + (my - y1) * (y2 - y1)) / l2));
@@ -484,7 +488,6 @@ def generate_tv_html(num_name, den_name, period_str, interval_str, c_type, overl
                 }}
             }});
             
-            // Draw current active line
             if (isDrawing && startPoint && currentMouse) {{
                 let x1 = mainChart.timeScale().logicalToCoordinate(startPoint.logical);
                 let y1 = mainSeries.priceToCoordinate(startPoint.price);
@@ -501,7 +504,6 @@ def generate_tv_html(num_name, den_name, period_str, interval_str, c_type, overl
             }}
         }}
 
-        // Animation loop keeps drawings perfectly anchored to the chart!
         function animate() {{
             redrawCanvas();
             requestAnimationFrame(animate);
@@ -643,7 +645,6 @@ def generate_tv_html(num_name, den_name, period_str, interval_str, c_type, overl
                 new ResizeObserver(entries => {{
                     if (entries.length === 0 || entries[0].target !== document.body) return;
                     
-                    // Sync internal canvas size with DOM bounds
                     if ('{str(enable_drawing).lower()}' === 'true') {{
                         const wrp = document.getElementById('main-chart-wrapper');
                         const cvs = document.getElementById('drawing-layer');
@@ -672,8 +673,8 @@ def expand_chart_modal(num_name, den_name):
     st.markdown(f"### {title}")
     with st.spinner("Loading High-Res TV Engine..."):
         html_payload, height_px = render_tv_chart(
-            num_name, den_name, st.session_state.target_period, interval_selection, 
-            chart_type, selected_overlays, selected_oscillators, show_volume, analysis_mode.split()[0], 
+            num_name, den_name, st.session_state.target_period, "1d", 
+            "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], True, "Ratio", 
             show_hud=True, base_height=500, enable_drawing=True
         )
         if html_payload: components.html(html_payload, height=height_px, scrolling=False)
@@ -886,7 +887,7 @@ with tab2:
         with st.spinner("Rendering WebGL Engine with Custom Drawing Tool..."):
             html_payload, height_px = render_tv_chart(
                 st.session_state.target_num, st.session_state.target_den, 
-                timeframe, interval_selection, chart_type, 
+                st.session_state.target_period, interval_selection, chart_type, 
                 selected_overlays, selected_oscillators, show_volume, analysis_mode.split()[0], 
                 show_hud=True, base_height=500, enable_drawing=True
             )
@@ -903,7 +904,6 @@ with tab2:
                             monthly_rtn = s_data.groupby(['Year', 'Month'])['Close'].apply(lambda x: (x.iloc[-1]/x.iloc[0] - 1)*100).unstack()
                             monthly_rtn.columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
                             
-                            # Plotly exclusively retained for the Heatmap visualization
                             fig_sea = go.Figure(data=go.Heatmap(
                                 z=monthly_rtn.values, x=monthly_rtn.columns, y=monthly_rtn.index,
                                 colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
