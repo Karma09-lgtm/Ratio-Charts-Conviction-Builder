@@ -96,9 +96,11 @@ if 'target_num' not in st.session_state: st.session_state.target_num = "S&P 500"
 if 'target_den' not in st.session_state: st.session_state.target_den = "None"
 if 'target_period' not in st.session_state: st.session_state.target_period = "1y"
 
+
 # --- SIDEBAR: OMNIBOX & CONTROLS ---
 st.sidebar.title("⚙️ Terminal Setup")
 
+# 1. THE OMNIBOX
 st.sidebar.markdown("**💻 Command Line**")
 with st.sidebar.form(key="omni_form", clear_on_submit=True):
     col_cmd, col_btn = st.columns([3, 1])
@@ -282,6 +284,7 @@ def fetch_market_news(keyword="None"):
                     seen.add(entry.title)
         except: continue
     return news_items[:15]
+
 
 # --- TRADINGVIEW CHART ENGINE WITH ENHANCED DRAWING CAPABILITIES ---
 TV_CONFIG = {
@@ -514,9 +517,14 @@ with tab1:
                     
                     with cols_top[col_idx]:
                         with st.container(border=True):
-                            c_title, c_btn = st.columns([3, 2])
+                            c_title, c_mod, c_exp = st.columns([5, 2, 2])
                             c_title.markdown(f"<div style='font-size:0.85rem; font-weight:600; color:#787b86; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{idx_name}</div>", unsafe_allow_html=True)
-                            if c_btn.button("⛶ Full", key=f"top_exp_{idx_name}", help="Open Full Screen Interactive Chart"): expand_chart_modal(idx_name, "None")
+                            if c_mod.button("⛶", key=f"top_mod_{idx_name}", help="Full Screen"): expand_chart_modal(idx_name, "None")
+                            if c_exp.button("🔍", key=f"top_exp_{idx_name}", help="Analyze in Explorer"):
+                                st.session_state.target_num = idx_name
+                                st.session_state.target_den = "None"
+                                st.toast(f"Loaded {idx_name} into Dynamic Explorer! 🚀", icon="✅")
+                                st.rerun()
                                 
                             data = fetch_yahoo_data(ticker, "5d", "1d")
                             if data is not None and not data.empty and len(data) >= 2:
@@ -538,9 +546,14 @@ with tab1:
             cols = st.columns(3)
             for idx, sec in enumerate(nse_list):
                 with cols[idx % 3], st.container(border=True):
-                    head1, head2 = st.columns([4, 2])
+                    head1, head2, head3 = st.columns([6, 1.5, 1.5])
                     head1.markdown(f"**{sec}**")
-                    if head2.button("⛶ Full", key=f"btn_nse_{idx}"): expand_chart_modal(sec, "Broad Market 500 (IND)")
+                    if head2.button("⛶", key=f"btn_mod_nse_{idx}", help="Full Screen"): expand_chart_modal(sec, "Broad Market 500 (IND)")
+                    if head3.button("🔍", key=f"btn_exp_nse_{idx}", help="Analyze in Explorer"):
+                        st.session_state.target_num = sec
+                        st.session_state.target_den = "Broad Market 500 (IND)"
+                        st.toast(f"Loaded {sec} / Broad Market 500 into Explorer! 🚀", icon="✅")
+                        st.rerun()
                     fig = render_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
                     if fig: st.plotly_chart(fig, use_container_width=True, key=f"nse_c_{idx}", config=STATIC_CONFIG)
                         
@@ -549,9 +562,14 @@ with tab1:
             cols = st.columns(3)
             for idx, sec in enumerate(us_list):
                 with cols[idx % 3], st.container(border=True):
-                    head1, head2 = st.columns([4, 2])
+                    head1, head2, head3 = st.columns([6, 1.5, 1.5])
                     head1.markdown(f"**{sec}**")
-                    if head2.button("⛶ Full", key=f"btn_us_{idx}"): expand_chart_modal(sec, "S&P 500")
+                    if head2.button("⛶", key=f"btn_mod_us_{idx}", help="Full Screen"): expand_chart_modal(sec, "S&P 500")
+                    if head3.button("🔍", key=f"btn_exp_us_{idx}", help="Analyze in Explorer"):
+                        st.session_state.target_num = sec
+                        st.session_state.target_den = "S&P 500"
+                        st.toast(f"Loaded {sec} / S&P 500 into Explorer! 🚀", icon="✅")
+                        st.rerun()
                     fig = render_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
                     if fig: st.plotly_chart(fig, use_container_width=True, key=f"us_c_{idx}", config=STATIC_CONFIG)
 
@@ -560,9 +578,14 @@ with tab1:
             cols = st.columns(2)
             for idx, (num, den, title) in enumerate(macro_pairs):
                 with cols[idx % 2], st.container(border=True):
-                    head1, head2 = st.columns([5, 2])
+                    head1, head2, head3 = st.columns([6, 1.5, 1.5])
                     head1.markdown(f"**{title}**<br>({num} / {den})", unsafe_allow_html=True)
-                    if head2.button("⛶ Full", key=f"btn_glb_{idx}"): expand_chart_modal(num, den)
+                    if head2.button("⛶", key=f"btn_mod_glb_{idx}", help="Full Screen"): expand_chart_modal(num, den)
+                    if head3.button("🔍", key=f"btn_exp_glb_{idx}", help="Analyze in Explorer"):
+                        st.session_state.target_num = num
+                        st.session_state.target_den = den
+                        st.toast(f"Loaded {num} / {den} into Explorer! 🚀", icon="✅")
+                        st.rerun()
                     fig = render_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=240)
                     if fig: st.plotly_chart(fig, use_container_width=True, key=f"glb_c_{idx}", config=STATIC_CONFIG)
 
@@ -607,7 +630,9 @@ with tab2:
         else: c1.subheader("No Assets Selected")
         
         with c2:
-            if st.button("🗑️ Clear All Charts & Drawings", use_container_width=True): st.rerun()
+            if st.button("🗑️ Clear Charts & Cache", use_container_width=True): 
+                st.cache_data.clear()
+                st.rerun()
 
         st.caption("💡 *Tip: To erase a specific line, click the Eraser icon then click the line, or select the line and press the Delete key.*")
         with st.spinner("Rendering Chart..."), st.container(border=True):
