@@ -55,6 +55,9 @@ st.markdown("""
     .tear-val { font-weight: 700; color: #131722; }
     .share-btn { display: inline-block; padding: 8px 12px; margin-bottom: 8px; border-radius: 4px; background: #ffffff; border: 1px solid #e0e3eb; color: #131722; text-decoration: none; font-size: 0.9rem; font-weight: 600; width: 100%; text-align: left; transition: 0.2s;}
     .share-btn:hover { background: #f0f3fa; border-color: #2962FF; color: #2962FF;}
+    
+    .ai-box { background: #F8F9FA; border-left: 4px solid #2962FF; padding: 15px 20px; border-radius: 0px 8px 8px 0px; font-size: 0.95rem; color: #333; line-height: 1.6; margin-top: 15px; margin-bottom: 20px;}
+    .ai-title { font-weight: 700; color: #131722; margin-bottom: 8px; font-size: 1.05rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -277,6 +280,67 @@ def fetch_market_news(keyword="None"):
         except: continue
     return news[:10]
 
+# --- QUANTITATIVE AI OVERVIEW ENGINE ---
+def generate_ai_overview(num, den, period_str, interval_str):
+    num_tkr = st.session_state.asset_dict.get(num)
+    den_tkr = st.session_state.asset_dict.get(den) if den != "None" else None
+    
+    num_data = fetch_yahoo_data(num_tkr, period_str, interval_str) if num_tkr else None
+    den_data = fetch_yahoo_data(den_tkr, period_str, interval_str) if den_tkr else None
+
+    if num_data is None or num_data.empty: return "Insufficient data to generate AI insights."
+    
+    if den_data is None or den == "None":
+        df = num_data[['Close']].copy()
+        df.columns = ['Ratio_Close']
+    else:
+        df = pd.merge(num_data[['Close']], den_data[['Close']], left_index=True, right_index=True, suffixes=('_num', '_den'))
+        df = df.ffill().bfill()
+        df = df[~df.index.duplicated(keep='first')].sort_index()
+        df['Ratio_Close'] = df['Close_num'] / df['Close_den']
+
+    series = df['Ratio_Close'].dropna()
+    if len(series) < 20: return "Insufficient historical data points to generate quantitative moving averages or momentum indicators."
+
+    current = series.iloc[-1]
+    sma50 = series.rolling(50).mean().iloc[-1] if len(series) >= 50 else None
+    sma200 = series.rolling(200).mean().iloc[-1] if len(series) >= 200 else None
+    rsi = calculate_rsi(series, 14).iloc[-1]
+
+    lookback = 21 if len(series) > 21 else len(series) - 1
+    roc_1m = ((current / series.iloc[-lookback]) - 1) * 100
+
+    asset_name = num if den == "None" else f"{num} against {den}"
+    rel_str = "appreciated" if roc_1m > 0 else "depreciated"
+
+    overview = f"<div class='ai-box'><div class='ai-title'>🤖 Automated Quantitative Overview for {num} {'' if den == 'None' else '/ '+den}</div>"
+
+    overview += f"<b>1. Price Action & Macro Trend:</b><br>"
+    if sma200 and not np.isnan(sma200):
+        trend = "bullish" if current > sma200 else "bearish"
+        overview += f"The ratio is currently in a <b>{trend} macro regime</b>, trading {'above' if current > sma200 else 'below'} its 200-period moving average. "
+    else:
+        overview += "The asset's long-term trend is still forming (insufficient data for 200-period analysis). "
+
+    if sma50 and not np.isnan(sma50):
+        overview += f"Short-term momentum is {'positive' if current > sma50 else 'negative'}, with prices holding {'above' if current > sma50 else 'below'} the critical 50-period moving average. "
+
+    overview += f"<br><br><b>2. Momentum & Mean Reversion (RSI):</b><br>"
+    overview += f"The 14-period Relative Strength Index (RSI) is reading <b>{rsi:.2f}</b>. "
+    if rsi >= 70:
+        overview += "This indicates the ratio is heavily <b>overbought</b>, suggesting a potential near-term pullback, consolidation, or mean-reversion event."
+    elif rsi <= 30:
+        overview += "This indicates the ratio is heavily <b>oversold</b>, suggesting capitulation and a potential near-term bounce or reversal."
+    elif 50 <= rsi < 70:
+        overview += "Momentum is constructive and in bullish territory, but has not yet reached extreme overbought levels."
+    else:
+        overview += "Momentum is leaning bearish, reflecting distribution, but has not yet reached extreme oversold capitulation levels."
+
+    overview += f"<br><br><b>3. Relative Performance:</b><br>"
+    overview += f"Over the last ~{lookback} periods, {asset_name} has shifted by <b>{roc_1m:+.2f}%</b>, actively {rel_str} over the medium term.</div>"
+
+    return overview
+
 
 # --- UNIVERSAL TRADINGVIEW ENGINE ---
 def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol, analysis_mode, draw_color="#2962FF", draw_width=2, show_hud=True, base_height=500, enable_drawing=False):
@@ -297,6 +361,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
         if 'Volume' in base_df.columns: den_data['Volume'] = 1
 
     df = pd.merge(num_data, den_data, left_index=True, right_index=True, suffixes=('_num', '_den'))
+    
     df = df.ffill().bfill() 
     df = df[~df.index.duplicated(keep='first')].sort_index()
 
@@ -1032,8 +1097,7 @@ elif st.session_state.active_tab == "🔍 Dynamic Explorer":
         with c_clear:
             if st.button("🗑️ Clear Screen", use_container_width=True): st.rerun()
 
-        st.caption("💡 *Tip: For True Full-Screen, click the '⛶ Full' button inside the chart overlay on the right.*")
-        with st.spinner("Rendering WebGL Engine with Custom Drawing Tool..."):
+        with st.spinner("Rendering WebGL Engine..."):
             d_col = st.session_state.get('draw_color', '#2962FF')
             d_wid = st.session_state.get('draw_width', 2)
             html_payload, height_px = render_tv_chart(
@@ -1043,6 +1107,11 @@ elif st.session_state.active_tab == "🔍 Dynamic Explorer":
                 d_col, d_wid, show_hud=True, base_height=700, enable_drawing=True
             )
             if html_payload: components.html(html_payload, height=height_px, scrolling=False)
+            
+        # --- QUANTITATIVE AI OVERVIEW INTEGRATION ---
+        with st.spinner("Calculating Quantitative AI Interpretation..."):
+            ai_report = generate_ai_overview(st.session_state.target_num, st.session_state.target_den, st.session_state.target_period, interval_selection)
+            st.markdown(ai_report, unsafe_allow_html=True)
             
         if st.session_state.target_num != "None":
             with st.expander("📅 Historical Seasonality Matrix (Monthly % Returns)", expanded=False):
@@ -1055,7 +1124,6 @@ elif st.session_state.active_tab == "🔍 Dynamic Explorer":
                             monthly_rtn = s_data.groupby(['Year', 'Month'])['Close'].apply(lambda x: (x.iloc[-1]/x.iloc[0] - 1)*100).unstack()
                             monthly_rtn.columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
                             
-                            # Plotly exclusively retained for the Heatmap visualization
                             fig_sea = go.Figure(data=go.Heatmap(
                                 z=monthly_rtn.values, x=monthly_rtn.columns, y=monthly_rtn.index,
                                 colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
