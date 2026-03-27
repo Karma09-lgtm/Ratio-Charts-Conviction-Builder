@@ -108,40 +108,72 @@ if 'show_news' not in st.session_state: st.session_state.show_news = True
 # Tab Navigation State
 if 'active_tab' not in st.session_state: st.session_state.active_tab = "🖥️ Macro Overview"
 
+
+# --- UNIVERSAL OMNIBOX RESOLVER ---
+def resolve_symbol(query):
+    query = query.strip().upper()
+    if not query or query == "NONE": return "None"
+    
+    # 1. Search existing local dictionary
+    for name, tkr in st.session_state.asset_dict.items():
+        if query == name.upper() or query == tkr.upper():
+            return name
+            
+    # 2. If not found, dynamically fetch from Yahoo Finance global feed
+    with st.spinner(f"Searching global feed for '{query}'..."):
+        try:
+            test_data = yf.download(query, period="5d", interval="1d", progress=False)
+            if test_data is not None and not test_data.empty:
+                st.session_state.asset_dict[query] = query # Add to dictionary dynamically
+                return query
+        except:
+            pass
+    return None
+
 # --- SIDEBAR CONTROLS ---
 st.sidebar.title("⚙️ Terminal Setup")
 
 st.sidebar.markdown("**💻 Command Line**")
 with st.sidebar.form(key="omni_form", clear_on_submit=True):
     col_cmd, col_btn = st.columns([3, 1])
-    with col_cmd: omni_cmd = st.text_input("Command", placeholder="e.g. Nifty / Gold 1y", label_visibility="collapsed")
+    with col_cmd: omni_cmd = st.text_input("Command", placeholder="e.g. TSLA / SPY 6mo", label_visibility="collapsed")
     with col_btn: omni_submit = st.form_submit_button("Go ⚡", use_container_width=True)
 
 if omni_submit and omni_cmd:
     parts = omni_cmd.split('/')
     try:
-        if len(parts) == 2:
-            num_part, den_part_split = parts[0].strip(), parts[1].strip().rsplit(' ', 1)
-            den_part = den_part_split[0]
-            matched_num = next((k for k in st.session_state.asset_dict.keys() if num_part.lower() in k.lower()), None)
-            matched_den = next((k for k in st.session_state.asset_dict.keys() if den_part.lower() in k.lower()), None)
-            if matched_num: st.session_state.target_num = matched_num
-            if matched_den: st.session_state.target_den = matched_den
+        tf = st.session_state.target_period # Default to current timeframe
+        num_query = parts[0].strip()
+        den_query = "None"
+        
+        if len(parts) == 2: # Ratio search
+            den_part_split = parts[1].strip().rsplit(' ', 1)
+            den_query = den_part_split[0]
             if len(den_part_split) > 1:
-                tf = den_part_split[1].lower()
-                if tf in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: st.session_state.target_period = tf
-        else:
+                tf_cand = den_part_split[1].lower()
+                if tf_cand in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: tf = tf_cand
+        else: # Single asset search
             num_part_split = parts[0].strip().rsplit(' ', 1)
-            matched_num = next((k for k in st.session_state.asset_dict.keys() if num_part_split[0].lower() in k.lower()), None)
-            if matched_num:
-                st.session_state.target_num = matched_num
-                st.session_state.target_den = "None"
+            num_query = num_part_split[0]
             if len(num_part_split) > 1:
-                tf = num_part_split[1].lower()
-                if tf in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: st.session_state.target_period = tf
-        st.session_state.active_tab = "🔍 Dynamic Explorer"
-        st.rerun() 
-    except Exception: pass
+                tf_cand = num_part_split[1].lower()
+                if tf_cand in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: tf = tf_cand
+        
+        # Smart Resolve (Local + Global)
+        res_num = resolve_symbol(num_query)
+        res_den = resolve_symbol(den_query)
+        
+        if res_num:
+            st.session_state.target_num = res_num
+            st.session_state.target_den = res_den if res_den else "None"
+            st.session_state.target_period = tf
+            st.session_state.active_tab = "🔍 Dynamic Explorer"
+            st.rerun()
+        else:
+            st.toast(f"Could not locate data for '{num_query}' on global exchanges.", icon="⚠️")
+    except Exception as e:
+        st.toast("Command error. Use format: Asset1 / Asset2 timeframe", icon="⚠️")
+
 
 with st.sidebar.expander("🧩 Layout Manager", expanded=False):
     st.caption("Toggle sections to free up screen real estate.")
@@ -361,7 +393,6 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
         if 'Volume' in base_df.columns: den_data['Volume'] = 1
 
     df = pd.merge(num_data, den_data, left_index=True, right_index=True, suffixes=('_num', '_den'))
-    
     df = df.ffill().bfill() 
     df = df[~df.index.duplicated(keep='first')].sort_index()
 
@@ -1097,6 +1128,7 @@ elif st.session_state.active_tab == "🔍 Dynamic Explorer":
         with c_clear:
             if st.button("🗑️ Clear Screen", use_container_width=True): st.rerun()
 
+        st.caption("💡 *Tip: For True Full-Screen, click the '⛶ Full' button inside the chart overlay on the right.*")
         with st.spinner("Rendering WebGL Engine..."):
             d_col = st.session_state.get('draw_color', '#2962FF')
             d_wid = st.session_state.get('draw_width', 2)
@@ -1151,6 +1183,7 @@ elif st.session_state.active_tab == "🔍 Dynamic Explorer":
                     selected_asset = df.iloc[event.selection.rows[0]]["Asset"]
                     st.session_state.target_num = selected_asset
                     st.session_state.target_den = "None"
+                    st.session_state.active_tab = "🔍 Dynamic Explorer"
                     st.rerun()
 
         st.subheader("📰 Sentiment Feed")
