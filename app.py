@@ -170,8 +170,8 @@ with st.sidebar.expander("⏱️ Time & Style", expanded=True):
 
 with st.sidebar.expander("🎨 Drawing Toolbox (Dynamic Chart)", expanded=True):
     c_color, c_width = st.columns([1, 2])
-    with c_color: st.session_state.draw_color = st.color_picker("Color", st.session_state.get("draw_color", "#2962FF"))
-    with c_width: st.session_state.draw_width = st.slider("Thickness", 1, 5, st.session_state.get("draw_width", 2))
+    with c_color: ui_draw_color = st.color_picker("Color", st.session_state.get("draw_color", "#2962FF"))
+    with c_width: ui_draw_width = st.slider("Thickness", 1, 5, st.session_state.get("draw_width", 2))
 
 with st.sidebar.expander("📈 Technicals & Overlays", expanded=True):
     show_volume = st.checkbox("Show Volume Bar", value=True)
@@ -213,7 +213,6 @@ def fetch_yahoo_data(ticker, period, interval):
         if data.empty: return None
         if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
         data = data.loc[:, ~data.columns.duplicated()]
-        # Strip timezones to prevent merge collisions between global exchanges
         data.index = data.index.tz_localize(None) 
         return data
     except: return None
@@ -360,7 +359,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
     hud_display = "block" if show_hud else "none"
     title_text = f"{num_name}" + (f" / {den_name}" if den_name != "None" else "")
 
-    # Inject custom HTML5 Drawing Layer with H-RAY
+    # Inject custom HTML5 Drawing Layer with Moving and H-RAY Support
     drawing_html = ""
     drawing_js = ""
     if enable_drawing:
@@ -369,17 +368,17 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
             <button onclick="window.setTool('pan')" id="btn-pan" class="active">🖐️ Pan</button>
             <button onclick="window.setTool('line')" id="btn-line">📏 Line</button>
             <button onclick="window.setTool('hray')" id="btn-hray">➖ H-Ray</button>
+            <button onclick="window.setTool('move')" id="btn-move">🖱️ Move</button>
             <button onclick="window.setTool('text')" id="btn-text">🔤 Text</button>
             <button onclick="window.setTool('eraser')" id="btn-eraser">🧽 Erase</button>
             <button onclick="window.clearDrawings()">🗑️ Clear</button>
-            <button onclick="window.toggleFullScreen()" title="Fill Monitor">⛶ Full</button>
         </div>
         <canvas id="drawing-layer"></canvas>
         """
         drawing_js = f"""
         const canvas = document.getElementById('drawing-layer');
         const ctx = canvas.getContext('2d');
-        let tool = 'pan';
+        window.currentTool = 'pan';
         let drawings = [];
         let isDrawing = false;
         let startPoint = null;
@@ -387,21 +386,19 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
         let dColor = '{draw_color}';
         let dWidth = {draw_width};
 
+        // Moving State
+        let draggingDrawing = null;
+        let dragType = null;
+        let lastMousePos = null;
+
         window.setTool = function(t) {{
-            tool = t;
+            window.currentTool = t;
             document.querySelectorAll('#drawing-toolbar button').forEach(b => b.classList.remove('active'));
             document.getElementById('btn-'+t).classList.add('active');
             canvas.style.pointerEvents = (t === 'pan') ? 'none' : 'auto';
         }};
 
         window.clearDrawings = function() {{ drawings = []; redrawCanvas(); }};
-        
-        window.toggleFullScreen = function() {{
-            const el = document.documentElement;
-            if (!document.fullscreenElement) {{
-                el.requestFullscreen().catch(err => alert("Error: " + err.message));
-            }} else {{ document.exitFullscreen(); }}
-        }};
 
         function getLogicalCoords(e) {{
             const rect = canvas.getBoundingClientRect();
@@ -413,27 +410,36 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
             }};
         }}
 
+        function getDistanceToLine(x, y, x1, y1, x2, y2) {{
+            let l2 = (x1-x2)*(x1-x2) + (y1-y2)*(y1-y2);
+            if (l2 == 0) return Math.hypot(x1-x, y1-y);
+            let t = Math.max(0, Math.min(1, ((x - x1) * (x2 - x1) + (y - y1) * (y2 - y1)) / l2));
+            let projX = x1 + t * (x2 - x1);
+            let projY = y1 + t * (y2 - y1);
+            return Math.hypot(x - projX, y - projY);
+        }}
+
         canvas.addEventListener('mousedown', e => {{
             const pos = getLogicalCoords(e);
-            if (tool === 'line') {{
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+
+            if (window.currentTool === 'line') {{
                 isDrawing = true;
                 startPoint = pos;
-            }} else if (tool === 'hray') {{
+            }} else if (window.currentTool === 'hray') {{
                 drawings.push({{type: 'hray', p: pos, color: dColor, width: dWidth}});
                 redrawCanvas();
                 window.setTool('pan');
-            }} else if (tool === 'text') {{
+            }} else if (window.currentTool === 'text') {{
                 const txt = prompt("Enter text annotation:");
                 if(txt) {{
                     drawings.push({{type: 'text', p: pos, text: txt, color: dColor}});
                     redrawCanvas();
                 }}
                 window.setTool('pan');
-            }} else if (tool === 'eraser') {{
-                const rect = canvas.getBoundingClientRect();
-                const mx = e.clientX - rect.left;
-                const my = e.clientY - rect.top;
-                
+            }} else if (window.currentTool === 'eraser') {{
                 drawings = drawings.filter(d => {{
                     if(d.type === 'text') {{
                         let px = mainChart.timeScale().logicalToCoordinate(d.p.logical);
@@ -446,12 +452,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                         let x2 = mainChart.timeScale().logicalToCoordinate(d.p2.logical);
                         let y2 = mainSeries.priceToCoordinate(d.p2.price);
                         if (x1 === null || y1 === null || x2 === null || y2 === null) return true;
-                        let l2 = (x1-x2)*(x1-x2) + (y1-y2)*(y1-y2);
-                        if (l2 == 0) return Math.hypot(x1-mx, y1-my) > 10;
-                        let t = Math.max(0, Math.min(1, ((mx - x1) * (x2 - x1) + (my - y1) * (y2 - y1)) / l2));
-                        let projX = x1 + t * (x2 - x1);
-                        let projY = y1 + t * (y2 - y1);
-                        return Math.hypot(mx - projX, my - projY) > 10;
+                        return getDistanceToLine(mx, my, x1, y1, x2, y2) > 10;
                     }} else if (d.type === 'hray') {{
                         let px = mainChart.timeScale().logicalToCoordinate(d.p.logical);
                         let py = mainSeries.priceToCoordinate(d.p.price);
@@ -463,23 +464,72 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                     return true;
                 }});
                 redrawCanvas();
+            }} else if (window.currentTool === 'move') {{
+                for (let i = drawings.length - 1; i >= 0; i--) {{
+                    let d = drawings[i];
+                    if (d.type === 'line') {{
+                        let x1 = mainChart.timeScale().logicalToCoordinate(d.p1.logical);
+                        let y1 = mainSeries.priceToCoordinate(d.p1.price);
+                        let x2 = mainChart.timeScale().logicalToCoordinate(d.p2.logical);
+                        let y2 = mainSeries.priceToCoordinate(d.p2.price);
+                        if (x1===null || y1===null || x2===null || y2===null) continue;
+
+                        if (Math.hypot(x1-mx, y1-my) < 15) {{ draggingDrawing = d; dragType = 'p1'; lastMousePos = pos; break; }}
+                        if (Math.hypot(x2-mx, y2-my) < 15) {{ draggingDrawing = d; dragType = 'p2'; lastMousePos = pos; break; }}
+                        if (getDistanceToLine(mx, my, x1, y1, x2, y2) < 15) {{ draggingDrawing = d; dragType = 'body'; lastMousePos = pos; break; }}
+                    }} else if (d.type === 'hray') {{
+                        let px = mainChart.timeScale().logicalToCoordinate(d.p.logical);
+                        let py = mainSeries.priceToCoordinate(d.p.price);
+                        if (px===null || py===null) continue;
+                        if (Math.hypot(px-mx, py-my) < 15) {{ draggingDrawing = d; dragType = 'p1'; lastMousePos = pos; break; }}
+                        if (mx >= px && Math.abs(my - py) < 15) {{ draggingDrawing = d; dragType = 'body'; lastMousePos = pos; break; }}
+                    }} else if (d.type === 'text') {{
+                        let px = mainChart.timeScale().logicalToCoordinate(d.p.logical);
+                        let py = mainSeries.priceToCoordinate(d.p.price);
+                        if (px===null || py===null) continue;
+                        if (Math.hypot(px-mx, py-my) < 25) {{ draggingDrawing = d; dragType = 'body'; lastMousePos = pos; break; }}
+                    }}
+                }}
             }}
         }});
 
         canvas.addEventListener('mousemove', e => {{
-            if(isDrawing && tool === 'line') {{
+            if(isDrawing && window.currentTool === 'line') {{
                 currentMouse = getLogicalCoords(e);
+            }}
+            if (window.currentTool === 'move' && draggingDrawing && lastMousePos) {{
+                const currentPos = getLogicalCoords(e);
+                let dLogical = currentPos.logical - lastMousePos.logical;
+                let dPrice = currentPos.price - lastMousePos.price;
+                
+                if (draggingDrawing.type === 'line') {{
+                    if (dragType === 'p1') {{ draggingDrawing.p1.logical += dLogical; draggingDrawing.p1.price += dPrice; }}
+                    else if (dragType === 'p2') {{ draggingDrawing.p2.logical += dLogical; draggingDrawing.p2.price += dPrice; }}
+                    else if (dragType === 'body') {{ 
+                        draggingDrawing.p1.logical += dLogical; draggingDrawing.p1.price += dPrice; 
+                        draggingDrawing.p2.logical += dLogical; draggingDrawing.p2.price += dPrice; 
+                    }}
+                }} else if (draggingDrawing.type === 'hray' || draggingDrawing.type === 'text') {{
+                    draggingDrawing.p.logical += dLogical;
+                    draggingDrawing.p.price += dPrice;
+                }}
+                lastMousePos = currentPos;
             }}
         }});
 
         canvas.addEventListener('mouseup', e => {{
-            if (isDrawing && tool === 'line') {{
+            if (isDrawing && window.currentTool === 'line') {{
                 drawings.push({{type: 'line', p1: startPoint, p2: getLogicalCoords(e), color: dColor, width: dWidth}});
                 isDrawing = false;
                 startPoint = null;
                 currentMouse = null;
                 redrawCanvas();
                 window.setTool('pan');
+            }}
+            if (window.currentTool === 'move') {{
+                draggingDrawing = null;
+                dragType = null;
+                lastMousePos = null;
             }}
         }});
 
@@ -522,6 +572,24 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                     ctx.strokeStyle = dColor; ctx.lineWidth = dWidth; ctx.stroke();
                 }}
             }}
+
+            if (window.currentTool === 'move') {{
+                ctx.fillStyle = '#2962FF';
+                drawings.forEach(d => {{
+                    if (d.type === 'line') {{
+                        let x1 = mainChart.timeScale().logicalToCoordinate(d.p1.logical);
+                        let y1 = mainSeries.priceToCoordinate(d.p1.price);
+                        let x2 = mainChart.timeScale().logicalToCoordinate(d.p2.logical);
+                        let y2 = mainSeries.priceToCoordinate(d.p2.price);
+                        if(x1!==null && y1!==null) {{ ctx.beginPath(); ctx.arc(x1,y1,4,0,Math.PI*2); ctx.fill(); }}
+                        if(x2!==null && y2!==null) {{ ctx.beginPath(); ctx.arc(x2,y2,4,0,Math.PI*2); ctx.fill(); }}
+                    }} else if (d.type === 'hray' || d.type === 'text') {{
+                        let x = mainChart.timeScale().logicalToCoordinate(d.p.logical);
+                        let y = mainSeries.priceToCoordinate(d.p.price);
+                        if(x!==null && y!==null) {{ ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fill(); }}
+                    }}
+                }});
+            }}
         }}
 
         function animate() {{ redrawCanvas(); requestAnimationFrame(animate); }}
@@ -535,9 +603,9 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
         <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
         <style>
             body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #ffffff; overflow: hidden; }}
-            .chart-container {{ width: 100%; height: 100vh; display: flex; flex-direction: column; position: relative; background: #fff; }}
+            .chart-container {{ width: 100%; display: flex; flex-direction: column; position: relative; background: #fff; }}
             .pane {{ width: 100%; }}
-            #main-chart-wrapper {{ position: relative; flex-grow: 1; min-height: {base_height}px; width: 100%; }}
+            #main-chart-wrapper {{ position: relative; flex-grow: 1; height: {base_height}px; width: 100%; }}
             #main-chart {{ height: 100%; width: 100%; }}
             .sub-chart {{ height: 160px; border-top: 1px solid #e0e3eb; flex-shrink: 0; }}
             .error-box {{ padding: 20px; color: #f23645; text-align: center; border: 1px solid #e0e3eb; border-radius: 6px; margin: 20px; background: #fffafb; }}
@@ -684,20 +752,21 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
     height_px = base_height + (160 * len(active_osc))
     return html, height_px
 
-@st.dialog("📈 Expanded Analysis", width="large")
+@st.dialog("📈 Full Screen Analysis", width="large")
 def expand_chart_modal(num_name, den_name):
     title = f"{num_name}" if den_name == "None" else f"{num_name} / {den_name}"
     st.markdown(f"### {title}")
-    st.caption("💡 *Tip: For true monitor-level full screen, click the ⛶ Full button inside the chart's toolbar.*")
-    d_col = st.session_state.get('draw_color', '#2962FF')
-    d_wid = st.session_state.get('draw_width', 2)
-    with st.spinner("Loading Engine..."):
+    st.caption("💡 *Tip: To make this fill your entire monitor, use your browser's zoom/fullscreen function (F11).*")
+    with st.spinner("Loading High-Res TV Engine..."):
+        d_col = st.session_state.get('draw_color', '#2962FF')
+        d_wid = st.session_state.get('draw_width', 2)
         html_payload, height_px = render_tv_chart(
             num_name, den_name, st.session_state.target_period, "1d", 
             "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], True, "Ratio", 
-            d_col, d_wid, show_hud=True, base_height=500, enable_drawing=True
+            d_col, d_wid, show_hud=True, base_height=750, enable_drawing=True
         )
         if html_payload: components.html(html_payload, height=height_px, scrolling=False)
+
 
 # --- MULTI-SCREEN TERMINAL TABS ---
 tab1, tab2, tab3 = st.tabs(["🖥️ Macro Overview", "🔍 Dynamic Explorer", "🧮 Correlation Matrix"])
@@ -720,7 +789,7 @@ with tab1:
                         with st.container(border=True):
                             c_title, c_mod, c_exp = st.columns([5, 2, 2])
                             c_title.markdown(f"<div style='font-size:0.85rem; font-weight:600; color:#787b86; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{idx_name}</div>", unsafe_allow_html=True)
-                            if c_mod.button("⛶", key=f"top_mod_{idx_name}", help="Expand Chart"): expand_chart_modal(idx_name, "None")
+                            if c_mod.button("⛶", key=f"top_mod_{idx_name}", help="Full Screen Modal"): expand_chart_modal(idx_name, "None")
                             if c_exp.button("🔍", key=f"top_exp_{idx_name}", help="Analyze in Explorer"):
                                 st.session_state.target_num = idx_name
                                 st.session_state.target_den = "None"
@@ -758,7 +827,6 @@ with tab1:
     with col_main:
         macro_tabs = st.tabs(["🇮🇳 NSE", "🇺🇸 US", "🌍 Global", "🕒 Recent"])
         
-        # We pass drawing colors dynamically even if drawing=False to prevent NameError
         d_col = st.session_state.get('draw_color', '#2962FF')
         d_wid = st.session_state.get('draw_width', 2)
 
@@ -854,7 +922,7 @@ with tab2:
     col_dyn_main, col_dyn_news = st.columns([3, 1]) 
     
     with col_dyn_main:
-        c1, c_save, c_clear = st.columns([4, 1.5, 1.5])
+        c1, c_save, c_full, c_clear = st.columns([3.5, 1.5, 1.5, 1.5])
         
         current_pair = (st.session_state.target_num, st.session_state.target_den)
         if current_pair in st.session_state.recent_ratios: st.session_state.recent_ratios.remove(current_pair)
@@ -899,19 +967,23 @@ with tab2:
                 if st.button("⭐ Save Ratio", use_container_width=True):
                     st.session_state.fav_ratios.append(current_pair)
                     st.rerun()
+                    
+        with c_full:
+            if st.button("⛶ Full Screen", use_container_width=True):
+                expand_chart_modal(st.session_state.target_num, st.session_state.target_den)
                 
         with c_clear:
             if st.button("🗑️ Clear Screen", use_container_width=True): st.rerun()
 
-        st.caption("💡 *Tip: For True Full-Screen, click the '⛶ Full' button inside the chart overlay on the right.*")
-        with st.spinner("Rendering WebGL Engine with Custom Drawing Tool..."):
+        st.caption("💡 *Tip: To adjust a drawn line, select the 🖱️ Move tool, then click and drag the endpoints or the body of the line.*")
+        with st.spinner("Rendering WebGL Engine..."):
             d_col = st.session_state.get('draw_color', '#2962FF')
             d_wid = st.session_state.get('draw_width', 2)
             html_payload, height_px = render_tv_chart(
                 st.session_state.target_num, st.session_state.target_den, 
                 st.session_state.target_period, interval_selection, chart_type, 
                 selected_overlays, selected_oscillators, show_volume, analysis_mode.split()[0], 
-                d_col, d_wid, show_hud=True, base_height=500, enable_drawing=True
+                d_col, d_wid, show_hud=True, base_height=700, enable_drawing=True
             )
             if html_payload: components.html(html_payload, height=height_px, scrolling=False)
             
@@ -1011,7 +1083,7 @@ with tab3:
                 fig_corr.update_yaxes(autorange="reversed")
                 st.plotly_chart(fig_corr, use_container_width=True, config={'displayModeBar': False})
             except Exception as e:
-                st.error("Could not calculate correlation. Please ensure active assets have valid history.")
+                st.error("Could not calculate correlation.")
 
 # --- TELEMETRY ---
 st.markdown("---")
