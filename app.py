@@ -65,7 +65,7 @@ CURRENCY_MAP = {
     "FTSE 100": "£", "DAX": "€", "STOXX 50": "€", "Nikkei 225": "¥", "ASX 200": "A$"
 }
 
-# --- BUG-PROOF STATE MANAGEMENT ---
+# --- BULLETPROOF STATE MANAGEMENT ---
 DEFAULT_ASSETS = {
     "S&P 500": "^GSPC", "Nasdaq 100": "^NDX", "Dow Jones": "^DJI", "Russell 2000": "^RUT", "VIX": "^VIX",
     "Broad Market 500 (IND)": "BSE-500.BO", "Nifty 50": "^NSEI", 
@@ -171,16 +171,28 @@ with st.sidebar.expander("📝 Watchlist Manager", expanded=False):
 
 st.sidebar.markdown("---")
 
+# --- BUG FIX: DECOUPLED WIDGET KEYS FROM SESSION STATE ---
 with st.sidebar.expander("⚙️ Asset Selection", expanded=True):
     asset_options = ["None"] + list(st.session_state.asset_dict.keys())
-    selected_asset_name = st.selectbox("Numerator (Asset 1)", asset_options, key="target_num") 
-    benchmark_name = st.selectbox("Denominator (Asset 2)", asset_options, key="target_den") 
+    idx_num = asset_options.index(st.session_state.target_num) if st.session_state.target_num in asset_options else 1
+    idx_den = asset_options.index(st.session_state.target_den) if st.session_state.target_den in asset_options else 0
+    
+    selected_asset_name = st.selectbox("Numerator (Asset 1)", asset_options, index=idx_num) 
+    benchmark_name = st.selectbox("Denominator (Asset 2)", asset_options, index=idx_den) 
+    
+    st.session_state.target_num = selected_asset_name
+    st.session_state.target_den = benchmark_name
+    
     analysis_mode = st.radio("Analysis Mode", ["Ratio", "Correlation (20d)"], horizontal=True)
 
 with st.sidebar.expander("⏱️ Time & Style", expanded=True):
     c1, c2 = st.columns(2)
     tf_options = ("1mo", "3mo", "6mo", "1y", "2y", "5y", "max")
-    with c1: timeframe = st.selectbox("Data Fetch", tf_options, key="target_period")
+    idx_tf = tf_options.index(st.session_state.target_period) if st.session_state.target_period in tf_options else 3
+    
+    with c1: timeframe = st.selectbox("Data Fetch", tf_options, index=idx_tf)
+    st.session_state.target_period = timeframe
+    
     with c2: interval_selection = st.selectbox("Interval", ("1d", "1wk", "1mo"))
     chart_type = st.selectbox("Style", ("Candlestick", "Bar (OHLC)", "Line"))
 
@@ -434,9 +446,9 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
 def expand_chart_modal(num_name, den_name):
     title = f"{num_name}" if den_name == "None" else f"{num_name} / {den_name}"
     st.markdown(f"### {title}")
-    st.caption("💡 *Tip: Click the Streamlit double-arrow icon [↙️↗️] in the top-right corner to enter absolute full-screen mode.*")
+    st.caption("💡 *Tip: Double-click the chart background to reset the zoom scale.*")
     with st.spinner("Loading High-Res Interactive Engine..."):
-        fig = render_chart(num_name, den_name, "max", "1d", "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], show_hud=True, show_rangeselector=True, height=800)
+        fig = render_chart(num_name, den_name, "max", "1d", "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], show_hud=True, show_rangeselector=True, height=650)
         if fig: st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
 
 # --- REUSABLE PANELS ---
@@ -630,11 +642,8 @@ with tab2:
         else: c1.subheader("No Assets Selected")
         
         with c2:
-            if st.button("🗑️ Clear Charts & Cache", use_container_width=True): 
-                st.cache_data.clear()
-                st.rerun()
+            if st.button("🗑️ Clear All Charts & Drawings", use_container_width=True): st.rerun()
 
-        st.caption("💡 *Tip: To erase a specific line, click the Eraser icon then click the line, or select the line and press the Delete key.*")
         with st.spinner("Rendering Chart..."), st.container(border=True):
             fig = render_chart(selected_asset_name, benchmark_name, timeframe, interval_selection, chart_type, selected_overlays, selected_oscillators, show_vol=show_volume, analysis_mode=analysis_mode.split()[0], show_hud=True, show_rangeselector=True, height=700)
             if fig: st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
