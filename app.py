@@ -213,7 +213,13 @@ def fetch_yahoo_data(ticker, period, interval):
         if data.empty: return None
         if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
         data = data.loc[:, ~data.columns.duplicated()]
-        data.index = data.index.tz_localize(None) 
+        
+        # --- CRITICAL FIX: Normalize index to prevent merge mismatches ---
+        if data.index.tz is not None:
+            data.index = data.index.tz_convert(None)
+        if interval in ['1d', '1wk', '1mo']:
+            data.index = data.index.normalize()
+        data = data[~data.index.duplicated(keep='last')].sort_index()
         return data
     except: return None
 
@@ -256,7 +262,6 @@ def fetch_market_news(keyword="None"):
                     seen.add(entry.title)
         except: continue
     return news[:10]
-
 
 # --- UNIVERSAL TRADINGVIEW ENGINE ---
 def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol, analysis_mode, draw_color="#2962FF", draw_width=2, show_hud=True, base_height=500, enable_drawing=False):
@@ -359,6 +364,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
     hud_display = "block" if show_hud else "none"
     title_text = f"{num_name}" + (f" / {den_name}" if den_name != "None" else "")
 
+    # Inject custom HTML5 Drawing Layer with H-RAY
     drawing_html = ""
     drawing_js = ""
     if enable_drawing:
@@ -450,19 +456,19 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                     if(d.type === 'text') {{
                         let px = mainChart.timeScale().logicalToCoordinate(d.p.logical);
                         let py = mainSeries.priceToCoordinate(d.p.price);
-                        if (px === null || py === null) return true;
+                        if (px === null || py === null || isNaN(px) || isNaN(py)) return true;
                         return Math.hypot(px-mx, py-my) > 20;
                     }} else if(d.type === 'line') {{
                         let x1 = mainChart.timeScale().logicalToCoordinate(d.p1.logical);
                         let y1 = mainSeries.priceToCoordinate(d.p1.price);
                         let x2 = mainChart.timeScale().logicalToCoordinate(d.p2.logical);
                         let y2 = mainSeries.priceToCoordinate(d.p2.price);
-                        if (x1 === null || y1 === null || x2 === null || y2 === null) return true;
+                        if (x1 === null || y1 === null || x2 === null || y2 === null || isNaN(x1) || isNaN(y1)) return true;
                         return getDistanceToLine(mx, my, x1, y1, x2, y2) > 10;
                     }} else if (d.type === 'hray') {{
                         let px = mainChart.timeScale().logicalToCoordinate(d.p.logical);
                         let py = mainSeries.priceToCoordinate(d.p.price);
-                        if (px === null || py === null) return true;
+                        if (px === null || py === null || isNaN(px) || isNaN(py)) return true;
                         if (mx >= px && Math.abs(my - py) <= 10) return false;
                         if (mx < px && Math.hypot(mx - px, my - py) <= 10) return false;
                         return true;
@@ -478,7 +484,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                         let y1 = mainSeries.priceToCoordinate(d.p1.price);
                         let x2 = mainChart.timeScale().logicalToCoordinate(d.p2.logical);
                         let y2 = mainSeries.priceToCoordinate(d.p2.price);
-                        if (x1===null || y1===null || x2===null || y2===null) continue;
+                        if (x1===null || y1===null || x2===null || y2===null || isNaN(x1)) continue;
 
                         if (Math.hypot(x1-mx, y1-my) < 15) {{ draggingDrawing = d; dragType = 'p1'; lastMousePos = pos; break; }}
                         if (Math.hypot(x2-mx, y2-my) < 15) {{ draggingDrawing = d; dragType = 'p2'; lastMousePos = pos; break; }}
@@ -486,13 +492,13 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                     }} else if (d.type === 'hray') {{
                         let px = mainChart.timeScale().logicalToCoordinate(d.p.logical);
                         let py = mainSeries.priceToCoordinate(d.p.price);
-                        if (px===null || py===null) continue;
+                        if (px===null || py===null || isNaN(px)) continue;
                         if (Math.hypot(px-mx, py-my) < 15) {{ draggingDrawing = d; dragType = 'p1'; lastMousePos = pos; break; }}
                         if (mx >= px && Math.abs(my - py) < 15) {{ draggingDrawing = d; dragType = 'body'; lastMousePos = pos; break; }}
                     }} else if (d.type === 'text') {{
                         let px = mainChart.timeScale().logicalToCoordinate(d.p.logical);
                         let py = mainSeries.priceToCoordinate(d.p.price);
-                        if (px===null || py===null) continue;
+                        if (px===null || py===null || isNaN(px)) continue;
                         if (Math.hypot(px-mx, py-my) < 25) {{ draggingDrawing = d; dragType = 'body'; lastMousePos = pos; break; }}
                     }}
                 }}
@@ -547,21 +553,21 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                     let y1 = mainSeries.priceToCoordinate(d.p1.price);
                     let x2 = mainChart.timeScale().logicalToCoordinate(d.p2.logical);
                     let y2 = mainSeries.priceToCoordinate(d.p2.price);
-                    if(x1 !== null && y1 !== null && x2 !== null && y2 !== null) {{
+                    if(x1 !== null && y1 !== null && x2 !== null && y2 !== null && !isNaN(x1) && !isNaN(y1)) {{
                         ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
                         ctx.strokeStyle = d.color; ctx.lineWidth = d.width; ctx.stroke();
                     }}
                 }} else if (d.type === 'hray') {{
                     let x = mainChart.timeScale().logicalToCoordinate(d.p.logical);
                     let y = mainSeries.priceToCoordinate(d.p.price);
-                    if(x !== null && y !== null) {{
+                    if(x !== null && y !== null && !isNaN(x) && !isNaN(y)) {{
                         ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(canvas.width, y);
                         ctx.strokeStyle = d.color; ctx.lineWidth = d.width; ctx.stroke();
                     }}
                 }} else if (d.type === 'text') {{
                     let x = mainChart.timeScale().logicalToCoordinate(d.p.logical);
                     let y = mainSeries.priceToCoordinate(d.p.price);
-                    if(x !== null && y !== null) {{
+                    if(x !== null && y !== null && !isNaN(x) && !isNaN(y)) {{
                         ctx.font = "bold 14px sans-serif"; ctx.fillStyle = d.color;
                         ctx.fillText(d.text, x, y);
                     }}
@@ -573,7 +579,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                 let y1 = mainSeries.priceToCoordinate(startPoint.price);
                 let x2 = mainChart.timeScale().logicalToCoordinate(currentMouse.logical);
                 let y2 = mainSeries.priceToCoordinate(currentMouse.price);
-                if(x1 !== null && y1 !== null && x2 !== null && y2 !== null) {{
+                if(x1 !== null && y1 !== null && x2 !== null && y2 !== null && !isNaN(x1)) {{
                     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
                     ctx.strokeStyle = dColor; ctx.lineWidth = dWidth; ctx.stroke();
                 }}
@@ -587,12 +593,12 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                         let y1 = mainSeries.priceToCoordinate(d.p1.price);
                         let x2 = mainChart.timeScale().logicalToCoordinate(d.p2.logical);
                         let y2 = mainSeries.priceToCoordinate(d.p2.price);
-                        if(x1!==null && y1!==null) {{ ctx.beginPath(); ctx.arc(x1,y1,4,0,Math.PI*2); ctx.fill(); }}
-                        if(x2!==null && y2!==null) {{ ctx.beginPath(); ctx.arc(x2,y2,4,0,Math.PI*2); ctx.fill(); }}
+                        if(x1!==null && y1!==null && !isNaN(x1)) {{ ctx.beginPath(); ctx.arc(x1,y1,4,0,Math.PI*2); ctx.fill(); }}
+                        if(x2!==null && y2!==null && !isNaN(x2)) {{ ctx.beginPath(); ctx.arc(x2,y2,4,0,Math.PI*2); ctx.fill(); }}
                     }} else if (d.type === 'hray' || d.type === 'text') {{
                         let x = mainChart.timeScale().logicalToCoordinate(d.p.logical);
                         let y = mainSeries.priceToCoordinate(d.p.price);
-                        if(x!==null && y!==null) {{ ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fill(); }}
+                        if(x!==null && y!==null && !isNaN(x)) {{ ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fill(); }}
                     }}
                 }});
             }}
@@ -611,8 +617,8 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
             body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #ffffff; overflow: hidden; }}
             .chart-container {{ width: 100%; height: 100vh; display: flex; flex-direction: column; position: relative; background: #fff; }}
             .pane {{ width: 100%; }}
-            #main-chart-wrapper {{ position: relative; flex-grow: 1; min-height: {base_height}px; width: 100%; }}
-            #main-chart {{ height: 100%; width: 100%; }}
+            #main-chart-wrapper {{ position: relative; flex-grow: 1; height: {base_height}px; width: 100%; }}
+            #main-chart {{ height: {base_height}px; width: 100%; }}
             .sub-chart {{ height: 160px; border-top: 1px solid #e0e3eb; flex-shrink: 0; }}
             .error-box {{ padding: 20px; color: #f23645; text-align: center; border: 1px solid #e0e3eb; border-radius: 6px; margin: 20px; background: #fffafb; }}
             #tv-legend {{ position: absolute; left: 12px; top: 12px; z-index: 100; font-size: 13px; font-weight: 500; color: #131722; background: rgba(255,255,255,0.85); padding: 6px 10px; border-radius: 4px; pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: {hud_display}; }}
@@ -739,13 +745,15 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                     if ('{str(enable_drawing).lower()}' === 'true') {{
                         const wrp = document.getElementById('main-chart-wrapper');
                         const cvs = document.getElementById('drawing-layer');
-                        cvs.width = wrp.clientWidth;
-                        cvs.height = wrp.clientHeight;
+                        if(wrp && cvs) {{
+                            cvs.width = wrp.clientWidth;
+                            cvs.height = wrp.clientHeight;
+                        }}
                     }}
                     
                     charts.forEach((c, idx) => {{
                         const elem = document.getElementById(idx === 0 ? 'main-chart' : `subchart_${idx-1}`);
-                        if(elem) c.applyOptions({{ width: elem.clientWidth }});
+                        if(elem) c.applyOptions({{ width: elem.clientWidth, height: elem.clientHeight }});
                     }});
                 }}).observe(document.body);
             }} catch (error) {{
@@ -1004,6 +1012,7 @@ with tab2:
                             monthly_rtn = s_data.groupby(['Year', 'Month'])['Close'].apply(lambda x: (x.iloc[-1]/x.iloc[0] - 1)*100).unstack()
                             monthly_rtn.columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
                             
+                            # Plotly exclusively retained for the Heatmap visualization
                             fig_sea = go.Figure(data=go.Heatmap(
                                 z=monthly_rtn.values, x=monthly_rtn.columns, y=monthly_rtn.index,
                                 colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
