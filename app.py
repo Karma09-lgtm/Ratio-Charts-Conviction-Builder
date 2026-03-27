@@ -96,9 +96,11 @@ if 'target_num' not in st.session_state: st.session_state.target_num = "S&P 500"
 if 'target_den' not in st.session_state: st.session_state.target_den = "None"
 if 'target_period' not in st.session_state: st.session_state.target_period = "1y"
 
+
 # --- SIDEBAR: OMNIBOX & CONTROLS ---
 st.sidebar.title("⚙️ Terminal Setup")
 
+# 1. THE OMNIBOX
 st.sidebar.markdown("**💻 Command Line**")
 with st.sidebar.form(key="omni_form", clear_on_submit=True):
     col_cmd, col_btn = st.columns([3, 1])
@@ -143,7 +145,7 @@ if omni_submit and omni_cmd:
 with st.sidebar.expander("🧹 Data & History Management", expanded=False):
     st.caption("Wipe local cache and force fresh data pull.")
     del_timeframe = st.selectbox("Select History to Delete", ["Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time History"])
-    if st.button("🗑️ Reset & Clear History", use_container_width=True):
+    if st.button("🗑️ Reset & Clear Cache", use_container_width=True):
         st.cache_data.clear()
         st.toast(f"Successfully cleared {del_timeframe} of cached history.", icon="✅")
         time.sleep(0.5)
@@ -277,17 +279,21 @@ def fetch_market_news(keyword="None"):
     return news_items[:15]
 
 
-# --- TRADINGVIEW CHART ENGINE WITH MAXIMAL PLOTLY DRAWING CAPABILITIES ---
-# Added all supported Plotly drawing tools (Trendlines, Paths, Circles, Rectangles, Eraser)
+# --- TRADINGVIEW CHART ENGINE WITH ENHANCED DRAWING CAPABILITIES ---
+# Added drawhline (horizontal infinite line) and drawvline (vertical line)
 TV_CONFIG = {
-    'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'drawclosedpath', 'drawcircle', 'drawrect', 'eraseshape'],
+    'modeBarButtonsToAdd': [
+        'drawline', 'drawhline', 'drawvline', 
+        'drawopenpath', 'drawclosedpath', 'drawcircle', 'drawrect', 'eraseshape'
+    ],
     'displayModeBar': True, 
     'displaylogo': False, 
     'scrollZoom': True,
     'toImageButtonOptions': {'format': 'png', 'filename': 'Macro_Conviction_Builder_Chart', 'height': 900, 'width': 1600, 'scale': 2 }
 }
+
 STATIC_CONFIG = {
-    'modeBarButtonsToAdd': ['drawline', 'drawrect', 'eraseshape'],
+    'modeBarButtonsToAdd': ['drawline', 'drawhline', 'drawrect', 'eraseshape'],
     'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True
 }
 
@@ -405,259 +411,4 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
             rangeselector=dict(buttons=list([dict(count=1, label="1m", step="month", stepmode="backward"), dict(count=3, label="3m", step="month", stepmode="backward"), dict(count=6, label="6m", step="month", stepmode="backward"), dict(count=1, label="YTD", step="year", stepmode="todate"), dict(count=1, label="1y", step="year", stepmode="backward"), dict(step="all", label="All")]), bgcolor="#ffffff", activecolor="#f0f3fa", bordercolor="#e0e3eb", font=dict(color="#131722")),
             showgrid=True, gridcolor=TV_GRID, tickformat=x_format, dtick=d_tick, showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash", row=1, col=1
         )
-    else: fig.update_xaxes(showgrid=True, gridcolor=TV_GRID, tickformat=x_format, dtick=d_tick, showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash", row=1, col=1)
-    
-    # ⚠️ UNLOCKED Y-AXIS: fixedrange=False allows you to click and drag the Y-axis to expand/compress price scale
-    fig.update_yaxes(showgrid=True, gridcolor=TV_GRID, side="right", tickformat=dec, showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash", fixedrange=False, row=1, col=1)
-    
-    return fig
-
-# --- MODAL: FULL SCREEN CHART VIEWER ---
-@st.dialog("📈 Full Screen Analysis", width="large")
-def expand_chart_modal(num_name, den_name):
-    title = f"{num_name}" if den_name == "None" else f"{num_name} / {den_name}"
-    st.markdown(f"### {title}")
-    with st.spinner("Loading High-Res Interactive Engine..."):
-        fig = render_chart(num_name, den_name, "max", "1d", "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], show_hud=True, show_rangeselector=True, height=650)
-        if fig: st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
-
-# --- REUSABLE PANELS ---
-def render_watchlist(key_prefix):
-    st.subheader("📋 Watchlists")
-    with st.container(border=True):
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            active_wl = st.selectbox("Select", list(st.session_state.watchlists.keys()), index=list(st.session_state.watchlists.keys()).index(st.session_state.active_wl), label_visibility="collapsed", key=f"{key_prefix}_sel_wl")
-            st.session_state.active_wl = active_wl
-        with col2:
-            with st.popover("⚙️"):
-                new_wl = st.text_input("New List Name", key=f"{key_prefix}_new_wl")
-                if st.button("Create", key=f"{key_prefix}_btn_create") and new_wl:
-                    st.session_state.watchlists[new_wl] = {}
-                    st.session_state.active_wl = new_wl
-                    st.rerun()
-
-        c_add, c_rem = st.columns(2)
-        with c_add:
-            with st.popover("➕ Add"):
-                sel_add = st.selectbox("Asset", list(st.session_state.asset_dict.keys()), key=f"{key_prefix}_sel_add")
-                if st.button("Add", key=f"{key_prefix}_btn_add"):
-                    st.session_state.watchlists[active_wl][sel_add] = st.session_state.asset_dict[sel_add]
-                    st.rerun()
-        with c_rem:
-            with st.popover("➖ Remove"):
-                if st.session_state.watchlists[active_wl]:
-                    rem_sel = st.selectbox("Asset", list(st.session_state.watchlists[active_wl].keys()), key=f"{key_prefix}_sel_rem")
-                    if st.button("Drop", key=f"{key_prefix}_btn_drop"):
-                        del st.session_state.watchlists[active_wl][rem_sel]
-                        st.rerun()
-
-        wl_data = fetch_bulk_watchlist(st.session_state.watchlists[active_wl])
-        if not wl_data.empty:
-            df = pd.DataFrame(wl_data)
-            df['Price'] = df.apply(lambda row: f"{CURRENCY_MAP.get(row['Asset'], '')}{row['Price']:.2f}", axis=1)
-            
-            styled_df = df.style.map(lambda x: 'color: #089981; font-weight: bold;' if x > 0 else 'color: #f23645; font-weight: bold;' if x < 0 else '', subset=['Chg %']).format({"Chg %": "{:+.2f}%"})
-            event = st.dataframe(styled_df, hide_index=True, use_container_width=True, on_select="rerun", selection_mode="single-row", key=f"{key_prefix}_df")
-            
-            if len(event.selection.rows) > 0:
-                selected_asset = df.iloc[event.selection.rows[0]]["Asset"]
-                st.session_state.target_num = selected_asset
-                st.session_state.target_den = "None"
-                st.success(f"**{selected_asset}** loaded into Explorer.")
-        else: st.caption("No data.")
-
-def render_news_feed(height):
-    st.subheader("📰 Sentiment Feed")
-    with st.container(border=True, height=height):
-        news = fetch_market_news(st.session_state.target_num)
-        if not news: st.info("No updates in the last 24 hours.")
-        else:
-            for item in news:
-                st.markdown(f"{item['tag']} **[{item['title']}]({item['link']})**")
-                pub_str = item.get('published', 'Recent').replace('+0000', '').strip()
-                st.caption(f"🕒 {pub_str}")
-                st.markdown("---")
-
-# --- MULTI-SCREEN TERMINAL TABS ---
-tab1, tab2, tab3 = st.tabs(["🖥️ Macro Overview", "🔍 Dynamic Explorer", "🧮 Correlation Matrix"])
-
-# --- SCREEN 1: MACRO GRID ---
-with tab1:
-    st.subheader("🌐 Live Global Markets")
-    top_indices = ["S&P 500", "Nasdaq 100", "DAX", "FTSE 100", "STOXX 50", "Nikkei 225", "ASX 200", "Nifty 50", "Gold (Spot)", "Crude Oil", "Bitcoin", "US 20+ Yr Treasury"]
-    
-    with st.spinner("Syncing Global Markets..."):
-        for row in range(0, len(top_indices), 6):
-            cols_top = st.columns(6)
-            for col_idx in range(6):
-                idx = row + col_idx
-                if idx < len(top_indices):
-                    idx_name = top_indices[idx]
-                    ticker = st.session_state.asset_dict[idx_name]
-                    curr = CURRENCY_MAP.get(idx_name, "")
-                    
-                    with cols_top[col_idx]:
-                        with st.container(border=True):
-                            c_title, c_btn = st.columns([4,1])
-                            c_title.markdown(f"<div style='font-size:0.85rem; font-weight:600; color:#787b86;'>{idx_name}</div>", unsafe_allow_html=True)
-                            if c_btn.button("⛶", key=f"top_exp_{idx_name}", help="Expand Chart"): expand_chart_modal(idx_name, "None")
-                                
-                            data = fetch_yahoo_data(ticker, "5d", "1d")
-                            if data is not None and not data.empty and len(data) >= 2:
-                                try:
-                                    last_close, prev_close = float(data['Close'].iloc[-1]), float(data['Close'].iloc[-2])
-                                    pct_change = ((last_close - prev_close) / prev_close) * 100
-                                    st.metric(label="val", value=f"{curr}{last_close:,.2f}", delta=f"{pct_change:.2f}%", label_visibility="collapsed")
-                                except Exception: st.metric(label="val", value="Error", label_visibility="collapsed")
-                            else: st.metric(label="val", value="N/A", label_visibility="collapsed")
-                    
-    st.markdown("---")
-    col_main, col_news = st.columns([3, 1]) 
-    
-    with col_main:
-        macro_tabs = st.tabs(["🇮🇳 NSE Sectors", "🇺🇸 US Markets", "🌍 Global Assets"])
-        
-        with macro_tabs[0]:
-            nse_list = ["Nifty Bank", "Nifty IT", "Nifty Auto", "Nifty Pharma", "Nifty Metal", "Nifty Energy"]
-            cols = st.columns(3)
-            for idx, sec in enumerate(nse_list):
-                with cols[idx % 3], st.container(border=True):
-                    head1, head2 = st.columns([4, 1])
-                    head1.markdown(f"**{sec}**")
-                    if head2.button("⛶", key=f"btn_nse_{idx}"): expand_chart_modal(sec, "Broad Market 500 (IND)")
-                    fig = render_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
-                    if fig: st.plotly_chart(fig, use_container_width=True, key=f"nse_c_{idx}", config=STATIC_CONFIG)
-                        
-        with macro_tabs[1]:
-            us_list = ["Nasdaq 100", "Russell 2000", "US Tech ETF", "US Fin ETF", "US Healthcare ETF", "US Energy ETF"]
-            cols = st.columns(3)
-            for idx, sec in enumerate(us_list):
-                with cols[idx % 3], st.container(border=True):
-                    head1, head2 = st.columns([4, 1])
-                    head1.markdown(f"**{sec}**")
-                    if head2.button("⛶", key=f"btn_us_{idx}"): expand_chart_modal(sec, "S&P 500")
-                    fig = render_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
-                    if fig: st.plotly_chart(fig, use_container_width=True, key=f"us_c_{idx}", config=STATIC_CONFIG)
-
-        with macro_tabs[2]:
-            macro_pairs = [("Gold (Spot)", "S&P 500", "Safe Haven vs Equity"), ("US 20+ Yr Treasury", "S&P 500", "Bonds vs Equity"), ("Emerging Markets", "S&P 500", "EM vs Developed"), ("Bitcoin", "Gold (Spot)", "Digital vs Gold")]
-            cols = st.columns(2)
-            for idx, (num, den, title) in enumerate(macro_pairs):
-                with cols[idx % 2], st.container(border=True):
-                    head1, head2 = st.columns([6, 1])
-                    head1.markdown(f"**{title}**<br>({num} / {den})", unsafe_allow_html=True)
-                    if head2.button("⛶", key=f"btn_glb_{idx}"): expand_chart_modal(num, den)
-                    fig = render_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=240)
-                    if fig: st.plotly_chart(fig, use_container_width=True, key=f"glb_c_{idx}", config=STATIC_CONFIG)
-
-    with col_news:
-        render_watchlist(key_prefix="tab1")
-        st.markdown("<br>", unsafe_allow_html=True)
-        render_news_feed(height=650)
-
-# --- SCREEN 2: DYNAMIC EXPLORER ---
-with tab2:
-    col_dyn_main, col_dyn_news = st.columns([3, 1]) 
-    
-    with col_dyn_main:
-        c1, c2 = st.columns([4, 1])
-        
-        if selected_asset_name != "None":
-            tkr = st.session_state.asset_dict[selected_asset_name]
-            data = fetch_yahoo_data(tkr, "5d", "1d")
-            curr = CURRENCY_MAP.get(selected_asset_name, "")
-            if data is not None and not data.empty and len(data) >= 2:
-                last_px, prev_px = data['Close'].iloc[-1], data['Close'].iloc[-2]
-                pct_chg = ((last_px - prev_px) / prev_px) * 100
-                clr = "#089981" if pct_chg >= 0 else "#f23645"
-                sgn = "+" if pct_chg >= 0 else ""
-                
-                header_title = f"{selected_asset_name} / {benchmark_name}" if benchmark_name != "None" else f"{selected_asset_name}"
-                c1.markdown(f"<h3 style='margin-bottom:0;'>{header_title} &nbsp;<span style='color:{clr}; font-size:1.3rem;'>{curr}{last_px:,.2f} ({sgn}{pct_chg:.2f}%)</span></h3>", unsafe_allow_html=True)
-                
-                if benchmark_name == "None":
-                    funds = fetch_fundamentals(tkr)
-                    if funds:
-                        st.markdown(f"""
-                        <div class='tear-sheet'>
-                            <div><span class='tear-val'>52W High:</span> {curr}{funds['52W High']}</div>
-                            <div><span class='tear-val'>52W Low:</span> {curr}{funds['52W Low']}</div>
-                            <div><span class='tear-val'>Mkt Cap:</span> {curr}{funds['Mkt Cap']}</div>
-                            <div><span class='tear-val'>P/E (TTM):</span> {funds['P/E (TTM)']}</div>
-                            <div><span class='tear-val'>Div Yield:</span> {funds['Div Yield']}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-            else: c1.subheader(f"{selected_asset_name}")
-        else: c1.subheader("No Assets Selected")
-        
-        with c2:
-            if st.button("🔄 Clear Screen", use_container_width=True): st.rerun()
-
-        with st.spinner("Rendering Chart..."), st.container(border=True):
-            fig = render_chart(selected_asset_name, benchmark_name, timeframe, interval_selection, chart_type, selected_overlays, selected_oscillators, show_vol=show_volume, analysis_mode=analysis_mode.split()[0], show_hud=True, show_rangeselector=True, height=700)
-            if fig: st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
-            
-        if selected_asset_name != "None":
-            with st.expander("📅 Historical Seasonality Matrix (Monthly % Returns)", expanded=False):
-                with st.spinner("Calculating Seasonality..."):
-                    try:
-                        s_data = fetch_yahoo_data(st.session_state.asset_dict[selected_asset_name], "5y", "1d")
-                        if s_data is not None and not s_data.empty:
-                            s_data['Year'] = s_data.index.year
-                            s_data['Month'] = s_data.index.month
-                            monthly_rtn = s_data.groupby(['Year', 'Month'])['Close'].apply(lambda x: (x.iloc[-1]/x.iloc[0] - 1)*100).unstack()
-                            monthly_rtn.columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-                            
-                            fig_sea = go.Figure(data=go.Heatmap(
-                                z=monthly_rtn.values, x=monthly_rtn.columns, y=monthly_rtn.index,
-                                colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
-                                text=monthly_rtn.round(2).fillna("").astype(str) + "%", texttemplate="%{text}", textfont={"color":"#131722"},
-                                zmid=0, showscale=False
-                            ))
-                            fig_sea.update_layout(height=250, margin=dict(l=10, r=10, t=30, b=10), template="plotly_white")
-                            fig_sea.update_yaxes(autorange="reversed", type='category')
-                            st.plotly_chart(fig_sea, use_container_width=True, config={'displayModeBar': False})
-                    except: st.caption("Seasonality data unavailable for this asset.")
-
-    with col_dyn_news:
-        render_watchlist(key_prefix="tab2")
-        st.markdown("<br>", unsafe_allow_html=True)
-        render_news_feed(height=400)
-
-# --- SCREEN 3: CORRELATION MATRIX ---
-with tab3:
-    st.subheader("🧮 Active Watchlist Correlation Matrix (6-Month Daily Returns)")
-    st.caption(f"Analyzing cross-asset correlations for list: **{st.session_state.active_wl}**")
-    
-    with st.spinner("Processing Matrix..."):
-        curr_wl = st.session_state.watchlists[st.session_state.active_wl]
-        if len(curr_wl) < 2:
-            st.warning("Please add at least 2 assets to your active watchlist to calculate correlation.")
-        else:
-            try:
-                tkr_list = list(curr_wl.values())
-                name_list = list(curr_wl.keys())
-                corr_data = yf.download(tkr_list, period="6mo", interval="1d", progress=False)['Close']
-                
-                if isinstance(corr_data, pd.Series): corr_data = corr_data.to_frame()
-                corr_data.columns = name_list 
-                
-                corr_matrix = corr_data.pct_change().corr().round(2)
-                
-                fig_corr = go.Figure(data=go.Heatmap(
-                    z=corr_matrix.values, x=corr_matrix.columns, y=corr_matrix.index,
-                    colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
-                    text=corr_matrix.values, texttemplate="%{text}",
-                    zmin=-1, zmax=1, zmid=0
-                ))
-                fig_corr.update_layout(height=600, template="plotly_white", margin=dict(l=10, r=10, t=10, b=10))
-                fig_corr.update_yaxes(autorange="reversed")
-                st.plotly_chart(fig_corr, use_container_width=True, config={'displayModeBar': False})
-            except Exception as e:
-                st.error("Could not calculate correlation. Please ensure active assets have valid history.")
-
-# --- TELEMETRY ---
-st.markdown("---")
-latency = round(time.time() - start_time, 2)
-st.caption(f"🟢 **System:** Online | ⏱️ **Latency:** {latency}s | 📡 **Engines:** YF API + RSS | 🕒 **Sync:** {pd.Timestamp.now().strftime('%H:%M:%S UTC')} | 📦 **Assets:** {len(st.session_state.asset_dict)}")
+    else: fig.update_xaxes(showgrid=True, gridcolor=TV_GRID, tickformat=x_format, dtick=d_tick, showspikes=True, spikecolor="#7
