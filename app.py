@@ -43,7 +43,6 @@ st.markdown("""
     
     .stButton > button { border: 1px solid #e0e3eb; background-color: #ffffff; color: #787b86; transition: 0.2s; width: 100%; border-radius: 6px; padding: 4px 8px; font-weight: 500;}
     .stButton > button:hover { border: 1px solid #2962FF; color: #2962FF; background-color: #f0f3fa;}
-    .stButton > button:disabled { border: 1px solid #e0e3eb; background-color: #f8f9fd; color: #089981; font-weight: 600; opacity: 1; }
     
     .tear-sheet { font-size: 0.85rem; color: #787b86; display: flex; gap: 15px; margin-top: -10px; margin-bottom: 15px; padding: 10px; background: #f8f9fd; border-radius: 6px; border: 1px solid #e0e3eb;}
     .tear-val { font-weight: 700; color: #131722; }
@@ -72,7 +71,7 @@ CURRENCY_MAP = {
     "FTSE 100": "£", "DAX": "€", "STOXX 50": "€", "Nikkei 225": "¥", "ASX 200": "A$"
 }
 
-# --- BUG-PROOF STATE MANAGEMENT ---
+# --- BULLETPROOF STATE MANAGEMENT ---
 DEFAULT_ASSETS = {
     "S&P 500": "^GSPC", "Nasdaq 100": "^NDX", "Dow Jones": "^DJI", "Russell 2000": "^RUT", "VIX": "^VIX",
     "Broad Market 500 (IND)": "BSE-500.BO", "Nifty 50": "^NSEI", 
@@ -188,7 +187,6 @@ with st.sidebar.expander("⏱️ Time & Style", expanded=True):
     idx_tf = tf_options.index(st.session_state.target_period) if st.session_state.target_period in tf_options else 3
     
     with c1: 
-        # Correctly bound explicitly to the timeframe variable to prevent NameError
         timeframe = st.selectbox("Data Fetch", tf_options, index=idx_tf)
         if timeframe != st.session_state.target_period:
             st.session_state.target_period = timeframe
@@ -275,9 +273,6 @@ def fetch_market_news(keyword="None"):
     base_keywords = ['rate', 'yield', 'treasury', 'inflation', 'cpi', 'fed', 'rbi', 'bank', 'earnings', 'geopolitic']
     if keyword != "None": base_keywords.append(keyword.lower().split(" ")[0]) 
     
-    bull_words = ['surge', 'jump', 'rise', 'up', 'beat', 'gain', 'bull', 'high', 'growth', 'soar']
-    bear_words = ['plunge', 'drop', 'fall', 'down', 'miss', 'loss', 'bear', 'low', 'recession', 'crash', 'cut']
-        
     for url in feed_urls:
         try:
             parsed = feedparser.parse(url)
@@ -287,9 +282,7 @@ def fetch_market_news(keyword="None"):
                 t_lower = entry.title.lower()
                 if entry.title not in seen and any(kw in t_lower for kw in base_keywords):
                     pub_date = entry.get("published", entry.get("pubDate", "Recent"))
-                    bull_score = sum(1 for w in bull_words if w in t_lower)
-                    bear_score = sum(1 for w in bear_words if w in t_lower)
-                    tag = "🟢" if bull_score > bear_score else "🔴" if bear_score > bull_score else "⚪"
+                    tag = "⚪"
                     news_items.append({"title": entry.title, "link": entry.link, "published": pub_date, "tag": tag})
                     seen.add(entry.title)
         except: continue
@@ -317,9 +310,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
     df = pd.merge(num_data, den_data, left_index=True, right_index=True, suffixes=('_num', '_den')).dropna()
     if df.empty: return "<div style='padding:20px; text-align:center; color:#f23645; font-family:sans-serif;'>Data unavailable for selected timeframe.</div>", base_height
     
-    # --- CRITICAL BULLETPROOF FIX: Remove Duplicates and Sort ---
     df = df[~df.index.duplicated(keep='first')].sort_index()
-    # Strip infinites mathematically before calculating technicals to avoid crashes
     df = df.replace([np.inf, -np.inf], np.nan)
 
     if analysis_mode == "Correlation" and num_name != "None" and den_name != "None":
@@ -333,7 +324,6 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
         df['Ratio_Low'] = df['Low_num'] / df['Low_den']
         df['Ratio_Close'] = df['Close_num'] / df['Close_den']
         
-    # Technical Calculations
     colors = {"21 EMA": "#FF9800", "50 SMA": "#2962FF", "200 EMA": "#F44336", "AVWAP": "#000000"}
     for ind in overlays:
         if ind == "50 SMA": df[ind] = df['Ratio_Close'].rolling(50).mean()
@@ -503,7 +493,6 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                     }}
                 }});
 
-                // Safely Sync interactions
                 if (charts.length > 1) {{
                     charts.forEach((chart, index) => {{
                         chart.timeScale().subscribeVisibleTimeRangeChange(range => {{
@@ -528,7 +517,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                     }});
                 }}).observe(document.body);
             }} catch (error) {{
-                document.getElementById('wrapper').innerHTML = "<div class='error-box'><b>Failed to render high-performance chart.</b><br>The selected asset may have incomplete or incompatible historical data parameters.<br><br><i>Log: " + error.message + "</i></div>";
+                document.getElementById('wrapper').innerHTML = "<div class='error-box'><b>Failed to render high-performance chart.</b><br>Insufficient data parameters.<br><i>" + error.message + "</i></div>";
             }}
         </script>
     </body>
@@ -537,15 +526,19 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
     height_px = base_height + (160 * len(active_osc))
     return html, height_px
 
-# --- MODAL: FULL SCREEN CHART VIEWER ---
 @st.dialog("📈 Full Screen Analysis", width="large")
 def expand_chart_modal(num_name, den_name):
     title = f"{num_name}" if den_name == "None" else f"{num_name} / {den_name}"
     st.markdown(f"### {title}")
     st.caption("💡 *Tip: Scroll to zoom. Click and drag the price scale (right) to expand/compress vertically.*")
     with st.spinner("Loading High-Res TV Engine..."):
-        html_payload, height_px = render_tv_chart(num_name, den_name, "max", "1d", "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], True, "Ratio", show_hud=True, base_height=500)
+        html_payload, height_px = render_tv_chart(
+            num_name, den_name, st.session_state.target_period, interval_selection, 
+            chart_type, selected_overlays, selected_oscillators, show_volume, analysis_mode.split()[0], 
+            show_hud=True, base_height=500
+        )
         if html_payload: components.html(html_payload, height=height_px, scrolling=False)
+
 
 # --- MULTI-SCREEN TERMINAL TABS ---
 tab1, tab2, tab3 = st.tabs(["🖥️ Macro Overview", "🔍 Dynamic Explorer", "🧮 Correlation Matrix"])
@@ -699,7 +692,7 @@ with tab2:
     col_dyn_main, col_dyn_news = st.columns([3, 1]) 
     
     with col_dyn_main:
-        c1, c2, c3 = st.columns([3, 1, 1])
+        c1, c_save, c_full, c_clear = st.columns([3.5, 1.5, 1.5, 1.5])
         
         current_pair = (st.session_state.target_num, st.session_state.target_den)
         if current_pair in st.session_state.recent_ratios: st.session_state.recent_ratios.remove(current_pair)
@@ -734,15 +727,23 @@ with tab2:
             else: c1.subheader(f"{st.session_state.target_num}")
         else: c1.subheader("No Assets Selected")
         
-        with c2:
+        with c_save:
             is_saved = current_pair in st.session_state.fav_ratios
-            btn_label = "✅ Saved" if is_saved else "⭐ Save Ratio"
-            if st.button(btn_label, disabled=is_saved, use_container_width=True):
-                st.session_state.fav_ratios.append(current_pair)
-                st.rerun()
+            if is_saved:
+                if st.button("❌ Unsave", use_container_width=True):
+                    st.session_state.fav_ratios.remove(current_pair)
+                    st.rerun()
+            else:
+                if st.button("⭐ Save Ratio", use_container_width=True):
+                    st.session_state.fav_ratios.append(current_pair)
+                    st.rerun()
+                    
+        with c_full:
+            if st.button("⛶ Full Screen", use_container_width=True):
+                expand_chart_modal(st.session_state.target_num, st.session_state.target_den)
                 
-        with c3:
-            if st.button("🗑️ Clear Screen", use_container_width=True): st.rerun()
+        with c_clear:
+            if st.button("🗑️ Clear", use_container_width=True): st.rerun()
 
         st.caption("💡 *Using High-Performance TradingView Engine. Scroll to zoom. Drag the right-axis to adjust scale.*")
         with st.spinner("Rendering WebGL Engine..."):
@@ -819,7 +820,6 @@ with tab3:
                 raw_data = yf.download(tkr_list, period="6mo", interval="1d", progress=False)
                 corr_data = pd.DataFrame()
                 
-                # BULLETPROOF MULTI-INDEX HANDLING
                 if isinstance(raw_data.columns, pd.MultiIndex):
                     if 'Close' in raw_data.columns.levels[0]:
                         corr_data = raw_data['Close']
@@ -828,7 +828,6 @@ with tab3:
                 else:
                     corr_data = raw_data
 
-                # Align names cleanly
                 valid_names = []
                 valid_tkrs = []
                 for name, tk in curr_wl.items():
