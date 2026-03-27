@@ -3,8 +3,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
 import time
 import feedparser
 import json
@@ -74,7 +72,7 @@ CURRENCY_MAP = {
     "FTSE 100": "£", "DAX": "€", "STOXX 50": "€", "Nikkei 225": "¥", "ASX 200": "A$"
 }
 
-# --- BUG-PROOF STATE MANAGEMENT ---
+# --- BULLETPROOF STATE MANAGEMENT ---
 DEFAULT_ASSETS = {
     "S&P 500": "^GSPC", "Nasdaq 100": "^NDX", "Dow Jones": "^DJI", "Russell 2000": "^RUT", "VIX": "^VIX",
     "Broad Market 500 (IND)": "BSE-500.BO", "Nifty 50": "^NSEI", 
@@ -91,7 +89,15 @@ DEFAULT_WATCHLISTS = {
 }
 
 if 'asset_dict' not in st.session_state: st.session_state.asset_dict = DEFAULT_ASSETS.copy()
+else:
+    for k, v in DEFAULT_ASSETS.items():
+        if k not in st.session_state.asset_dict: st.session_state.asset_dict[k] = v
+
 if 'watchlists' not in st.session_state: st.session_state.watchlists = DEFAULT_WATCHLISTS.copy()
+else:
+    for k, v in DEFAULT_WATCHLISTS.items():
+        if k not in st.session_state.watchlists: st.session_state.watchlists[k] = v
+
 if 'active_wl' not in st.session_state: st.session_state.active_wl = "⭐ Global Macro"
 if 'target_num' not in st.session_state: st.session_state.target_num = "S&P 500"
 if 'target_den' not in st.session_state: st.session_state.target_den = "None"
@@ -103,6 +109,7 @@ if 'recent_ratios' not in st.session_state: st.session_state.recent_ratios = []
 # --- SIDEBAR: OMNIBOX & CONTROLS ---
 st.sidebar.title("⚙️ Terminal Setup")
 
+# 1. THE OMNIBOX
 st.sidebar.markdown("**💻 Command Line**")
 with st.sidebar.form(key="omni_form", clear_on_submit=True):
     col_cmd, col_btn = st.columns([3, 1])
@@ -177,7 +184,6 @@ with st.sidebar.expander("📈 Technicals & Overlays", expanded=True):
     show_volume = st.checkbox("Show Volume Bar", value=True)
     selected_overlays = st.multiselect("Overlays", ["21 EMA", "50 SMA", "200 EMA", "AVWAP"], default=["50 SMA"])
     selected_oscillators = st.multiselect("Oscillators", ["Volume", "RSI (14)", "MACD (12, 26, 9)", "Drawdown %"], default=["Volume"])
-
 
 # --- HELPERS & DATA ENGINES ---
 def format_large_number(num):
@@ -271,83 +277,17 @@ def fetch_market_news(keyword="None"):
         except: continue
     return news_items[:15]
 
-# --- PLOTLY ENGINE (FOR STATIC GRIDS ONLY) ---
-STATIC_CONFIG = {
-    'modeBarButtonsToAdd': ['drawline', 'drawhline', 'drawrect', 'eraseshape'],
-    'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True
-}
 
-def render_plotly_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol=True, analysis_mode="Ratio", show_hud=True, show_rangeselector=True, height=650):
-    if num_name == "None" and den_name == "None": return None
-    num_data = fetch_yahoo_data(st.session_state.asset_dict.get(num_name), period_str, interval_str) if num_name != "None" else None
-    den_data = fetch_yahoo_data(st.session_state.asset_dict.get(den_name), period_str, interval_str) if den_name != "None" else None
-
-    if (num_data is None and den_name == "None") or (den_data is None and num_name == "None"): return None
-
-    base_df = num_data if num_data is not None else den_data
-    if num_name == "None" or num_data is None:
-        num_data = pd.DataFrame(1, index=base_df.index, columns=['Open', 'High', 'Low', 'Close'])
-        if 'Volume' in base_df.columns: num_data['Volume'] = 1
-    if den_name == "None" or den_data is None:
-        den_data = pd.DataFrame(1, index=base_df.index, columns=['Open', 'High', 'Low', 'Close'])
-        if 'Volume' in base_df.columns: den_data['Volume'] = 1
-
-    df = pd.merge(num_data, den_data, left_index=True, right_index=True, suffixes=('_num', '_den')).dropna()
-    if df.empty: return None
-
-    if analysis_mode == "Correlation" and num_name != "None" and den_name != "None":
-        c = df['Close_num'].pct_change().rolling(20).corr(df['Close_den'].pct_change())
-        df['Ratio_Close'] = df['Ratio_Open'] = df['Ratio_High'] = df['Ratio_Low'] = c
-        oscillators = [o for o in oscillators if o not in ["Volume", "Drawdown %"]] 
-        overlays = [] 
-    else:
-        df['Ratio_Open'] = df['Open_num'] / df['Open_den']
-        df['Ratio_High'] = df['High_num'] / df['High_den']
-        df['Ratio_Low'] = df['Low_num'] / df['Low_den']
-        df['Ratio_Close'] = df['Close_num'] / df['Close_den']
-        c = df['Ratio_Close']
-    
-    has_volume = "Volume" in oscillators and 'Volume_num' in df.columns
-    active_osc = [o for o in oscillators if o != "Volume"]
-    
-    num_rows = 1 + (1 if has_volume else 0) + len(active_osc)
-    if not has_volume and not active_osc: row_heights = [1.0]
-    elif has_volume and not active_osc: row_heights = [0.82, 0.18]
-    elif not has_volume and active_osc: row_heights = [0.70] + [0.30 / len(active_osc)] * len(active_osc)
-    else: row_heights = [0.65, 0.15] + [0.20 / len(active_osc)] * len(active_osc)
-    
-    fig = make_subplots(rows=num_rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
-    TV_GREEN, TV_RED, TV_BLUE, TV_GRID, BG = '#089981', '#f23645', '#2962FF', '#e0e3eb', '#ffffff'
-
-    if analysis_mode == "Correlation":
-        fig.add_trace(go.Scatter(x=df.index, y=c, line=dict(color='#E91E63', width=2)), row=1, col=1)
-        fig.add_hline(y=0, line_dash="dash", line_color=TV_GRID, row=1, col=1)
-    else:
-        if c_type == "Line": fig.add_trace(go.Scatter(x=df.index, y=c, line=dict(color=TV_BLUE, width=1.5)), row=1, col=1)
-        elif c_type == "Bar (OHLC)": fig.add_trace(go.Ohlc(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=c, increasing_line_color=TV_GREEN, decreasing_line_color=TV_RED), row=1, col=1)
-        else: fig.add_trace(go.Candlestick(x=df.index, open=df['Ratio_Open'], high=df['Ratio_High'], low=df['Ratio_Low'], close=c, increasing_line_color=TV_GREEN, increasing_fillcolor=TV_GREEN, decreasing_line_color=TV_RED, decreasing_fillcolor=TV_RED), row=1, col=1)
-
-    curr_row = 2
-    if has_volume:
-        vol_colors = ['rgba(8, 153, 129, 0.5)' if row['Ratio_Close'] >= row['Ratio_Open'] else 'rgba(242, 54, 69, 0.5)' for _, row in df.iterrows()]
-        fig.add_trace(go.Bar(x=df.index, y=df['Volume_num'], marker_color=vol_colors, name="Volume"), row=curr_row, col=1)
-        fig.update_yaxes(title_text="Vol", row=curr_row, col=1, showgrid=False, tickformat=".2s", fixedrange=False)
-
-    dec = ".2f" if analysis_mode == "Correlation" or den_name == "None" else ".4f"
-    fig.update_layout(template="plotly_white", plot_bgcolor=BG, paper_bgcolor=BG, xaxis_rangeslider_visible=False, height=height, margin=dict(l=10, r=45, t=10, b=10), showlegend=False, hovermode="x unified", dragmode="pan", font=dict(color="#131722", size=11))
-    x_format = "%d %b %Y" if period_str in ["1mo", "3mo", "6mo"] else "%b %Y"
-    fig.update_xaxes(showgrid=True, gridcolor=TV_GRID, tickformat=x_format, showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash", row=1, col=1)
-    fig.update_yaxes(showgrid=True, gridcolor=TV_GRID, side="right", tickformat=dec, showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash", fixedrange=False, row=1, col=1)
-    return fig
-
-# --- TRADINGVIEW LIGHTWEIGHT CHARTS ENGINE (DYNAMIC EXPLORER) ---
-def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol, analysis_mode):
-    if num_name == "None" and den_name == "None": return "<div style='padding:20px; text-align:center; color:#787b86; font-family:sans-serif;'>No assets selected.</div>", 100
+# --- UNIVERSAL TRADINGVIEW ENGINE ---
+# Now powers BOTH Dynamic Explorer and Static Grid Views
+def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol, analysis_mode, show_hud=True, base_height=500):
+    if num_name == "None" and den_name == "None": 
+        return "<div style='padding:20px; text-align:center; color:#787b86; font-family:sans-serif;'>No assets selected.</div>", base_height
     
     num_data = fetch_yahoo_data(st.session_state.asset_dict.get(num_name), period_str, interval_str) if num_name != "None" else None
     den_data = fetch_yahoo_data(st.session_state.asset_dict.get(den_name), period_str, interval_str) if den_name != "None" else None
     if (num_data is None and den_name == "None") or (den_data is None and num_name == "None"): 
-        return "<div style='padding:20px; text-align:center; color:#f23645; font-family:sans-serif;'>Data unavailable for selected parameters.</div>", 100
+        return "<div style='padding:20px; text-align:center; color:#f23645; font-family:sans-serif;'>Data unavailable for selected parameters.</div>", base_height
 
     base_df = num_data if num_data is not None else den_data
     if num_name == "None" or num_data is None:
@@ -358,11 +298,10 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
         if 'Volume' in base_df.columns: den_data['Volume'] = 1
 
     df = pd.merge(num_data, den_data, left_index=True, right_index=True, suffixes=('_num', '_den')).dropna()
-    if df.empty: return "<div style='padding:20px; text-align:center; color:#f23645; font-family:sans-serif;'>Data unavailable for selected timeframe.</div>", 100
+    if df.empty: return "<div style='padding:20px; text-align:center; color:#f23645; font-family:sans-serif;'>Data unavailable for selected timeframe.</div>", base_height
     
-    # --- CRITICAL BULLETPROOF FIX: Remove Duplicates and Sort ---
+    # --- BULLETPROOFING: Strict Sterilization ---
     df = df[~df.index.duplicated(keep='first')].sort_index()
-    # Strip infinites mathematically before calculating technicals to avoid crashes
     df = df.replace([np.inf, -np.inf], np.nan)
 
     if analysis_mode == "Correlation" and num_name != "None" and den_name != "None":
@@ -376,7 +315,6 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
         df['Ratio_Low'] = df['Low_num'] / df['Low_den']
         df['Ratio_Close'] = df['Close_num'] / df['Close_den']
         
-    # Technical Calculations
     colors = {"21 EMA": "#FF9800", "50 SMA": "#2962FF", "200 EMA": "#F44336", "AVWAP": "#000000"}
     for ind in overlays:
         if ind == "50 SMA": df[ind] = df['Ratio_Close'].rolling(50).mean()
@@ -396,7 +334,7 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
             df['Peak'] = df['Ratio_Close'].cummax()
             df['Drawdown'] = ((df['Ratio_Close'] - df['Peak']) / df['Peak']) * 100
 
-    # Serialization (Drop NaNs selectively per component)
+    # Serialization
     if analysis_mode == "Correlation" or c_type == "Line":
         temp_main = df.dropna(subset=['Ratio_Close'])
         main_data = [{"time": d.strftime('%Y-%m-%d'), "value": float(row['Ratio_Close'])} for d, row in temp_main.iterrows()]
@@ -438,7 +376,10 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
             data = [{"time": d.strftime('%Y-%m-%d'), "value": float(v)} for d, v in temp_osc['Drawdown'].items()]
             osc_js += f"createSubchart('{div_id}', 'Drawdown %', 'area', {json.dumps(data)}, '#f23645');\n"
 
-    # WebGL payload with PINNED CDN VERSION for stability
+    # HTML Payload Configuration
+    hud_display = "block" if show_hud else "none"
+    title_text = f"{num_name}" + (f" / {den_name}" if den_name != "None" else "")
+
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -446,15 +387,17 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
         <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
         <style>
             body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #ffffff; overflow: hidden; }}
-            .chart-container {{ width: 100%; display: flex; flex-direction: column; }}
+            .chart-container {{ width: 100%; display: flex; flex-direction: column; position: relative; }}
             .pane {{ width: 100%; }}
-            #main-chart {{ height: 480px; }}
+            #main-chart {{ height: {base_height}px; }}
             .sub-chart {{ height: 180px; border-top: 1px solid #e0e3eb; }}
             .error-box {{ padding: 20px; color: #f23645; text-align: center; border: 1px solid #e0e3eb; border-radius: 6px; margin: 20px; background: #fffafb; }}
+            #tv-legend {{ position: absolute; left: 12px; top: 12px; z-index: 100; font-size: 13px; font-weight: 500; color: #131722; background: rgba(255,255,255,0.85); padding: 6px 10px; border-radius: 4px; pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: {hud_display}; }}
         </style>
     </head>
     <body>
         <div id="wrapper" class="chart-container">
+            <div id="tv-legend"><b>{title_text}</b><br><span id="legend-data">Hover over chart to view data</span></div>
             <div id="main-chart" class="pane"></div>
             {"".join([f'<div id="subchart_{i}" class="pane sub-chart"></div>' for i in range(len(active_osc))])}
         </div>
@@ -477,9 +420,7 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
                 if('{c_type}' === 'Line') {{
                     mainSeries = mainChart.addLineSeries({{ color: '{'#E91E63' if analysis_mode == "Correlation" else '#2962FF'}', lineWidth: 2 }});
                 }} else if ('{c_type}' === 'Bar (OHLC)') {{
-                    mainSeries = mainChart.addBarSeries({{
-                        upColor: '#089981', downColor: '#f23645', thinBars: false
-                    }});
+                    mainSeries = mainChart.addBarSeries({{ upColor: '#089981', downColor: '#f23645', thinBars: false }});
                 }} else {{
                     mainSeries = mainChart.addCandlestickSeries({{
                         upColor: '#089981', downColor: '#f23645', borderVisible: false,
@@ -529,6 +470,21 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
 
                 {osc_js}
 
+                // Interactive TradingView HUD Update
+                const legendData = document.getElementById('legend-data');
+                mainChart.subscribeCrosshairMove(param => {{
+                    if (param.time) {{
+                        const data = param.seriesData.get(mainSeries);
+                        if (data) {{
+                            if (data.open !== undefined) {{
+                                legendData.innerHTML = `O: ${{data.open.toFixed(2)}} H: ${{data.high.toFixed(2)}} L: ${{data.low.toFixed(2)}} C: ${{data.close.toFixed(2)}}`;
+                            }} else {{
+                                legendData.innerHTML = `Close: ${{data.value.toFixed(4)}}`;
+                            }}
+                        }}
+                    }}
+                }});
+
                 // Safely Sync interactions
                 if (charts.length > 1) {{
                     charts.forEach((chart, index) => {{
@@ -560,7 +516,7 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
     </body>
     </html>
     """
-    height_px = 500 + (180 * len(active_osc))
+    height_px = base_height + (180 * len(active_osc))
     return html, height_px
 
 # --- MODAL: FULL SCREEN CHART VIEWER ---
@@ -568,10 +524,11 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
 def expand_chart_modal(num_name, den_name):
     title = f"{num_name}" if den_name == "None" else f"{num_name} / {den_name}"
     st.markdown(f"### {title}")
-    st.caption("💡 *Tip: Double-click the chart background to reset the zoom scale.*")
-    with st.spinner("Loading High-Res Interactive Engine..."):
-        fig = render_plotly_chart(num_name, den_name, "max", "1d", "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], show_hud=True, show_rangeselector=True, height=650)
-        if fig: st.plotly_chart(fig, use_container_width=True, config=STATIC_CONFIG)
+    st.caption("💡 *Tip: Scroll to zoom. Click and drag the price scale (right) to expand/compress vertically.*")
+    with st.spinner("Loading High-Res TV Engine..."):
+        # We pass base_height=600 to make the modal pop out beautifully large
+        html_payload, height_px = render_tv_chart(num_name, den_name, "max", "1d", "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], True, "Ratio", show_hud=True, base_height=600)
+        if html_payload: components.html(html_payload, height=height_px, scrolling=False)
 
 # --- MULTI-SCREEN TERMINAL TABS ---
 tab1, tab2, tab3 = st.tabs(["🖥️ Macro Overview", "🔍 Dynamic Explorer", "🧮 Correlation Matrix"])
@@ -633,6 +590,7 @@ with tab1:
     with col_main:
         macro_tabs = st.tabs(["🇮🇳 NSE", "🇺🇸 US", "🌍 Global", "🕒 Recent"])
         
+        # STATIC GRID - We use base_height=240 to keep them small and dense.
         with macro_tabs[0]:
             nse_list = ["Nifty Bank", "Nifty IT", "Nifty Auto", "Nifty Pharma"]
             cols = st.columns(2)
@@ -645,8 +603,8 @@ with tab1:
                         st.session_state.target_num = sec
                         st.session_state.target_den = "Broad Market 500 (IND)"
                         st.rerun()
-                    fig = render_plotly_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
-                    if fig: st.plotly_chart(fig, use_container_width=True, key=f"nse_c_{idx}", config=STATIC_CONFIG)
+                    html_payload, height_px = render_tv_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=240)
+                    if html_payload: components.html(html_payload, height=height_px, scrolling=False)
                         
         with macro_tabs[1]:
             us_list = ["Nasdaq 100", "Russell 2000", "US Tech ETF", "US Healthcare ETF"]
@@ -660,8 +618,8 @@ with tab1:
                         st.session_state.target_num = sec
                         st.session_state.target_den = "S&P 500"
                         st.rerun()
-                    fig = render_plotly_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
-                    if fig: st.plotly_chart(fig, use_container_width=True, key=f"us_c_{idx}", config=STATIC_CONFIG)
+                    html_payload, height_px = render_tv_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=240)
+                    if html_payload: components.html(html_payload, height=height_px, scrolling=False)
 
         with macro_tabs[2]:
             macro_pairs = [("Gold (Spot)", "S&P 500", "Safe Haven vs Equity"), ("US 20+ Yr Treasury", "S&P 500", "Bonds vs Equity"), ("Emerging Markets", "S&P 500", "EM vs Developed"), ("Bitcoin", "Gold (Spot)", "Digital vs Gold")]
@@ -675,8 +633,8 @@ with tab1:
                         st.session_state.target_num = num
                         st.session_state.target_den = den
                         st.rerun()
-                    fig = render_plotly_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=240)
-                    if fig: st.plotly_chart(fig, use_container_width=True, key=f"glb_c_{idx}", config=STATIC_CONFIG)
+                    html_payload, height_px = render_tv_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=240)
+                    if html_payload: components.html(html_payload, height=height_px, scrolling=False)
                     
         with macro_tabs[3]:
             st.caption("Your most recently analyzed charts")
@@ -692,8 +650,8 @@ with tab1:
                             st.session_state.target_num = num
                             st.session_state.target_den = den
                             st.rerun()
-                        fig = render_plotly_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
-                        if fig: st.plotly_chart(fig, use_container_width=True, key=f"rec_c_{idx}", config=STATIC_CONFIG)
+                        html_payload, height_px = render_tv_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=240)
+                        if html_payload: components.html(html_payload, height=height_px, scrolling=False)
 
     with col_news:
         st.subheader("📋 Watchlists")
@@ -771,15 +729,14 @@ with tab2:
         with c3:
             if st.button("🗑️ Clear Screen", use_container_width=True): st.rerun()
 
-        st.caption("💡 *You are now using the ultra-high-performance **TradingView Lightweight Charts** engine. Scroll to zoom, click and drag to pan.*")
+        st.caption("💡 *You are using the TradingView Engine. Scroll to zoom. Drag the right-axis to adjust scale.*")
         with st.spinner("Rendering WebGL Engine..."):
-            html_payload, height_px = render_tv_lightweight(
+            html_payload, height_px = render_tv_chart(
                 st.session_state.target_num, st.session_state.target_den, 
                 timeframe, interval_selection, chart_type, 
-                selected_overlays, selected_oscillators, show_volume, analysis_mode.split()[0]
+                selected_overlays, selected_oscillators, show_volume, analysis_mode.split()[0], show_hud=True, base_height=480
             )
-            if html_payload:
-                components.html(html_payload, height=height_px, scrolling=False)
+            if html_payload: components.html(html_payload, height=height_px, scrolling=False)
             
         if st.session_state.target_num != "None":
             with st.expander("📅 Historical Seasonality Matrix (Monthly % Returns)", expanded=False):
@@ -792,6 +749,7 @@ with tab2:
                             monthly_rtn = s_data.groupby(['Year', 'Month'])['Close'].apply(lambda x: (x.iloc[-1]/x.iloc[0] - 1)*100).unstack()
                             monthly_rtn.columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
                             
+                            # TV Lightweight charts CANNOT do heatmaps. Retaining Plotly specifically for this data science visualization.
                             fig_sea = go.Figure(data=go.Heatmap(
                                 z=monthly_rtn.values, x=monthly_rtn.columns, y=monthly_rtn.index,
                                 colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
@@ -849,6 +807,7 @@ with tab3:
                 
                 corr_matrix = corr_data.pct_change().corr().round(2)
                 
+                # TV Lightweight charts CANNOT do heatmaps. Retaining Plotly specifically for this visualization.
                 fig_corr = go.Figure(data=go.Heatmap(
                     z=corr_matrix.values, x=corr_matrix.columns, y=corr_matrix.index,
                     colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
@@ -864,4 +823,4 @@ with tab3:
 # --- TELEMETRY ---
 st.markdown("---")
 latency = round(time.time() - start_time, 2)
-st.caption(f"🟢 **System:** Online | ⏱️ **Latency:** {latency}s | 📡 **Engines:** YF API + RSS | 🕒 **Sync:** {pd.Timestamp.now().strftime('%H:%M:%S UTC')} | 📦 **Assets:** {len(st.session_state.asset_dict)}")
+st.caption(f"🟢 **System:** Online | ⏱️ **Latency:** {latency}s | 📡 **Engines:** YF API + TV WebGL | 🕒 **Sync:** {pd.Timestamp.now().strftime('%H:%M:%S UTC')} | 📦 **Assets:** {len(st.session_state.asset_dict)}")
