@@ -102,7 +102,6 @@ if 'recent_ratios' not in st.session_state: st.session_state.recent_ratios = []
 # --- SIDEBAR: OMNIBOX & CONTROLS ---
 st.sidebar.title("⚙️ Terminal Setup")
 
-# 1. THE OMNIBOX
 st.sidebar.markdown("**💻 Command Line**")
 with st.sidebar.form(key="omni_form", clear_on_submit=True):
     col_cmd, col_btn = st.columns([3, 1])
@@ -177,6 +176,7 @@ with st.sidebar.expander("📈 Technicals & Overlays", expanded=True):
     show_volume = st.checkbox("Show Volume Bar", value=True)
     selected_overlays = st.multiselect("Overlays", ["21 EMA", "50 SMA", "200 EMA", "AVWAP"], default=["50 SMA"])
     selected_oscillators = st.multiselect("Oscillators", ["Volume", "RSI (14)", "MACD (12, 26, 9)", "Drawdown %"], default=["Volume"])
+
 
 # --- HELPERS & DATA ENGINES ---
 def format_large_number(num):
@@ -270,6 +270,7 @@ def fetch_market_news(keyword="None"):
         except: continue
     return news_items[:15]
 
+
 # --- PLOTLY ENGINE (FOR STATIC GRIDS ONLY) ---
 STATIC_CONFIG = {
     'modeBarButtonsToAdd': ['drawline', 'drawhline', 'drawrect', 'eraseshape'],
@@ -341,10 +342,12 @@ def render_plotly_chart(num_name, den_name, period_str, interval_str, c_type, ov
 
 # --- TRADINGVIEW LIGHTWEIGHT CHARTS ENGINE (DYNAMIC EXPLORER) ---
 def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol, analysis_mode):
-    if num_name == "None" and den_name == "None": return ""
+    if num_name == "None" and den_name == "None": return "<div style='padding:20px; text-align:center; color:#787b86; font-family:sans-serif;'>No assets selected.</div>", 100
+    
     num_data = fetch_yahoo_data(st.session_state.asset_dict.get(num_name), period_str, interval_str) if num_name != "None" else None
     den_data = fetch_yahoo_data(st.session_state.asset_dict.get(den_name), period_str, interval_str) if den_name != "None" else None
-    if (num_data is None and den_name == "None") or (den_data is None and num_name == "None"): return ""
+    if (num_data is None and den_name == "None") or (den_data is None and num_name == "None"): 
+        return "<div style='padding:20px; text-align:center; color:#f23645; font-family:sans-serif;'>Data unavailable for selected parameters.</div>", 100
 
     base_df = num_data if num_data is not None else den_data
     if num_name == "None" or num_data is None:
@@ -355,7 +358,10 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
         if 'Volume' in base_df.columns: den_data['Volume'] = 1
 
     df = pd.merge(num_data, den_data, left_index=True, right_index=True, suffixes=('_num', '_den')).dropna()
-    if df.empty: return ""
+    if df.empty: return "<div style='padding:20px; text-align:center; color:#f23645; font-family:sans-serif;'>Data unavailable for selected timeframe.</div>", 100
+    
+    # Strip infinites mathematically before calculating technicals to avoid crashes
+    df = df.replace([np.inf, -np.inf], np.nan)
 
     if analysis_mode == "Correlation" and num_name != "None" and den_name != "None":
         c = df['Close_num'].pct_change().rolling(20).corr(df['Close_den'].pct_change())
@@ -368,24 +374,7 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
         df['Ratio_Low'] = df['Low_num'] / df['Low_den']
         df['Ratio_Close'] = df['Close_num'] / df['Close_den']
         
-    df = df.replace({np.nan: None}).sort_index()
-
-    # Main Series JSON
-    if analysis_mode == "Correlation" or c_type == "Line":
-        main_data = [{"time": d.strftime('%Y-%m-%d'), "value": row['Ratio_Close']} for d, row in df.dropna(subset=['Ratio_Close']).iterrows()]
-        c_type = "Line"
-    else:
-        main_data = [{"time": d.strftime('%Y-%m-%d'), "open": row['Ratio_Open'], "high": row['Ratio_High'], "low": row['Ratio_Low'], "close": row['Ratio_Close']} for d, row in df.dropna(subset=['Ratio_Close']).iterrows()]
-
-    has_volume = "Volume" in oscillators and 'Volume_num' in df.columns
-    vol_data = []
-    if show_vol and has_volume:
-        for d, row in df.dropna(subset=['Volume_num']).iterrows():
-            c = '#08998180' if row.get('Ratio_Close', 0) >= row.get('Ratio_Open', 0) else '#f2364580'
-            vol_data.append({"time": d.strftime('%Y-%m-%d'), "value": row['Volume_num'], "color": c})
-
-    # Overlays JSON
-    overlay_js = ""
+    # Technical Calculations (Calculate while NaNs are acceptable)
     colors = {"21 EMA": "#FF9800", "50 SMA": "#2962FF", "200 EMA": "#F44336", "AVWAP": "#000000"}
     for ind in overlays:
         if ind == "50 SMA": df[ind] = df['Ratio_Close'].rolling(50).mean()
@@ -393,35 +382,61 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
         if ind == "200 EMA": df[ind] = df['Ratio_Close'].ewm(span=200).mean()
         if ind == "AVWAP" and 'Volume_num' in df.columns:
             df[ind] = ((df['Ratio_High'] + df['Ratio_Low'] + df['Ratio_Close'])/3 * df['Volume_num']).cumsum() / df['Volume_num'].cumsum()
-            
-        if ind in df.columns:
-            line_data = [{"time": d.strftime('%Y-%m-%d'), "value": v} for d, v in df[ind].dropna().items()]
-            overlay_js += f"const l_{ind.replace(' ', '')} = mainChart.addLineSeries({{ color: '{colors.get(ind, '#000')}', lineWidth: 2, title: '{ind}' }}); l_{ind.replace(' ', '')}.setData({json.dumps(line_data)});\n"
 
-    # Oscillators JS
     active_osc = [o for o in oscillators if o != "Volume"]
-    osc_js = ""
-    for i, osc in enumerate(active_osc):
-        div_id = f"subchart_{i}"
-        if osc == "RSI (14)":
-            df['RSI'] = calculate_rsi(df['Ratio_Close'], 14)
-            data = [{"time": d.strftime('%Y-%m-%d'), "value": v} for d, v in df['RSI'].dropna().items()]
-            osc_js += f"createSubchart('{div_id}', 'RSI', 'line', '{json.dumps(data)}', '#7E57C2');\n"
+    for osc in active_osc:
+        if osc == "RSI (14)": df['RSI'] = calculate_rsi(df['Ratio_Close'], 14)
         elif osc == "MACD (12, 26, 9)":
             df['MACD_Line'] = df['Ratio_Close'].ewm(span=12).mean() - df['Ratio_Close'].ewm(span=26).mean()
             df['MACD_Signal'] = df['MACD_Line'].ewm(span=9).mean()
             df['MACD_Hist'] = df['MACD_Line'] - df['MACD_Signal']
-            m_line = [{"time": d.strftime('%Y-%m-%d'), "value": v} for d, v in df['MACD_Line'].dropna().items()]
-            m_sig = [{"time": d.strftime('%Y-%m-%d'), "value": v} for d, v in df['MACD_Signal'].dropna().items()]
-            m_hist = [{"time": d.strftime('%Y-%m-%d'), "value": v, "color": '#089981' if v>=0 else '#f23645'} for d, v in df['MACD_Hist'].dropna().items()]
-            osc_js += f"createMacdChart('{div_id}', '{json.dumps(m_line)}', '{json.dumps(m_sig)}', '{json.dumps(m_hist)}');\n"
         elif osc == "Drawdown %":
             df['Peak'] = df['Ratio_Close'].cummax()
             df['Drawdown'] = ((df['Ratio_Close'] - df['Peak']) / df['Peak']) * 100
-            data = [{"time": d.strftime('%Y-%m-%d'), "value": v} for d, v in df['Drawdown'].dropna().items()]
-            osc_js += f"createSubchart('{div_id}', 'Drawdown %', 'area', '{json.dumps(data)}', '#f23645');\n"
 
-    # HTML Payload
+    # Serialization (Drop NaNs selectively per component to ensure JS stability)
+    if analysis_mode == "Correlation" or c_type == "Line":
+        temp_main = df.dropna(subset=['Ratio_Close'])
+        main_data = [{"time": d.strftime('%Y-%m-%d'), "value": row['Ratio_Close']} for d, row in temp_main.iterrows()]
+        c_type = "Line"
+    else:
+        temp_main = df.dropna(subset=['Ratio_Open', 'Ratio_High', 'Ratio_Low', 'Ratio_Close'])
+        main_data = [{"time": d.strftime('%Y-%m-%d'), "open": row['Ratio_Open'], "high": row['Ratio_High'], "low": row['Ratio_Low'], "close": row['Ratio_Close']} for d, row in temp_main.iterrows()]
+
+    has_volume = "Volume" in oscillators and 'Volume_num' in df.columns
+    vol_data = []
+    if show_vol and has_volume:
+        temp_vol = df.dropna(subset=['Volume_num'])
+        for d, row in temp_vol.iterrows():
+            c = '#08998180' if row.get('Ratio_Close', 0) >= row.get('Ratio_Open', 0) else '#f2364580'
+            vol_data.append({"time": d.strftime('%Y-%m-%d'), "value": row['Volume_num'], "color": c})
+
+    overlay_js = ""
+    for ind in overlays:
+        if ind in df.columns:
+            temp_line = df.dropna(subset=[ind])
+            line_data = [{"time": d.strftime('%Y-%m-%d'), "value": v} for d, v in temp_line[ind].items()]
+            overlay_js += f"const l_{ind.replace(' ', '')} = mainChart.addLineSeries({{ color: '{colors.get(ind, '#000')}', lineWidth: 2, title: '{ind}', crosshairMarkerVisible: false }}); l_{ind.replace(' ', '')}.setData({json.dumps(line_data)});\n"
+
+    osc_js = ""
+    for i, osc in enumerate(active_osc):
+        div_id = f"subchart_{i}"
+        if osc == "RSI (14)":
+            temp_osc = df.dropna(subset=['RSI'])
+            data = [{"time": d.strftime('%Y-%m-%d'), "value": v} for d, v in temp_osc['RSI'].items()]
+            osc_js += f"createSubchart('{div_id}', 'RSI', 'line', {json.dumps(data)}, '#7E57C2');\n"
+        elif osc == "MACD (12, 26, 9)":
+            temp_osc = df.dropna(subset=['MACD_Line', 'MACD_Signal', 'MACD_Hist'])
+            m_line = [{"time": d.strftime('%Y-%m-%d'), "value": v} for d, v in temp_osc['MACD_Line'].items()]
+            m_sig = [{"time": d.strftime('%Y-%m-%d'), "value": v} for d, v in temp_osc['MACD_Signal'].items()]
+            m_hist = [{"time": d.strftime('%Y-%m-%d'), "value": v, "color": '#089981' if v>=0 else '#f23645'} for d, v in temp_osc['MACD_Hist'].items()]
+            osc_js += f"createMacdChart('{div_id}', {json.dumps(m_line)}, {json.dumps(m_sig)}, {json.dumps(m_hist)});\n"
+        elif osc == "Drawdown %":
+            temp_osc = df.dropna(subset=['Drawdown'])
+            data = [{"time": d.strftime('%Y-%m-%d'), "value": v} for d, v in temp_osc['Drawdown'].items()]
+            osc_js += f"createSubchart('{div_id}', 'Drawdown %', 'area', {json.dumps(data)}, '#f23645');\n"
+
+    # WebGL payload
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -431,7 +446,7 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
             body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #ffffff; overflow: hidden; }}
             .chart-container {{ width: 100%; display: flex; flex-direction: column; }}
             .pane {{ width: 100%; }}
-            #main-chart {{ height: 500px; }}
+            #main-chart {{ height: 480px; }}
             .sub-chart {{ height: 180px; border-top: 1px solid #e0e3eb; }}
         </style>
     </head>
@@ -475,34 +490,33 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
 
             {overlay_js}
 
-            function createSubchart(divId, title, type, dataStr, color) {{
+            function createSubchart(divId, title, type, data, color) {{
                 const container = document.getElementById(divId);
                 const chart = LightweightCharts.createChart(container, chartOptions);
                 charts.push(chart);
-                const data = JSON.parse(dataStr);
                 let series;
                 if(type === 'area') {{
                     series = chart.addAreaSeries({{ lineColor: color, topColor: color+'40', bottomColor: color+'00', title: title }});
                 }} else {{
                     series = chart.addLineSeries({{ color: color, lineWidth: 1.5, title: title }});
                     if (title === 'RSI') {{
-                        chart.addLineSeries({{color: '#787b86', lineWidth: 1, lineStyle: 2}}).setData(data.map(d => ({{time: d.time, value: 70}})));
-                        chart.addLineSeries({{color: '#787b86', lineWidth: 1, lineStyle: 2}}).setData(data.map(d => ({{time: d.time, value: 30}})));
+                        chart.addLineSeries({{color: '#787b86', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false}}).setData(data.map(d => ({{time: d.time, value: 70}})));
+                        chart.addLineSeries({{color: '#787b86', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false}}).setData(data.map(d => ({{time: d.time, value: 30}})));
                     }}
                 }}
                 series.setData(data);
             }}
 
-            function createMacdChart(divId, lineStr, sigStr, histStr) {{
+            function createMacdChart(divId, lineData, sigData, histData) {{
                 const container = document.getElementById(divId);
                 const chart = LightweightCharts.createChart(container, chartOptions);
                 charts.push(chart);
                 const histSeries = chart.addHistogramSeries({{ priceScaleId: '', scaleMargins: {{ top: 0.1, bottom: 0.1 }} }});
-                histSeries.setData(JSON.parse(histStr));
-                const macdLine = chart.addLineSeries({{ color: '#2962FF', lineWidth: 1.5, title: 'MACD' }});
-                macdLine.setData(JSON.parse(lineStr));
-                const sigLine = chart.addLineSeries({{ color: '#FF9800', lineWidth: 1.5, title: 'Sig' }});
-                sigLine.setData(JSON.parse(sigStr));
+                histSeries.setData(histData);
+                const macdLine = chart.addLineSeries({{ color: '#2962FF', lineWidth: 1.5, title: 'MACD', crosshairMarkerVisible: false }});
+                macdLine.setData(lineData);
+                const sigLine = chart.addLineSeries({{ color: '#FF9800', lineWidth: 1.5, title: 'Sig', crosshairMarkerVisible: false }});
+                sigLine.setData(sigData);
             }}
 
             {osc_js}
@@ -524,7 +538,6 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
             
             new ResizeObserver(entries => {{
                 if (entries.length === 0 || entries[0].target !== document.body) return;
-                const newRect = entries[0].contentRect;
                 charts.forEach((c, idx) => {{
                     const elem = document.getElementById(idx === 0 ? 'main-chart' : `subchart_${idx-1}`);
                     if(elem) c.applyOptions({{ width: elem.clientWidth }});
@@ -534,7 +547,7 @@ def render_tv_lightweight(num_name, den_name, period_str, interval_str, c_type, 
     </body>
     </html>
     """
-    height_px = 520 + (180 * len(active_osc))
+    height_px = 500 + (180 * len(active_osc))
     return html, height_px
 
 # --- MODAL: FULL SCREEN CHART VIEWER ---
@@ -753,7 +766,7 @@ with tab2:
                 selected_overlays, selected_oscillators, show_volume, analysis_mode.split()[0]
             )
             if html_payload:
-                components.html(html_payload, height=height_px)
+                components.html(html_payload, height=height_px, scrolling=False)
             
         if st.session_state.target_num != "None":
             with st.expander("📅 Historical Seasonality Matrix (Monthly % Returns)", expanded=False):
