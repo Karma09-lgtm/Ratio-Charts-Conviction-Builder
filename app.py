@@ -17,12 +17,14 @@ st.markdown("""
     .stApp { background-color: #ffffff; color: #131722; font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
-        background-color: #ffffff; border-radius: 6px; border: 1px solid #e0e3eb; padding: 10px; box-shadow: 0px 2px 4px rgba(0,0,0,0.02);
+        background-color: #ffffff; border-radius: 6px; border: 1px solid #e0e3eb; padding: 12px; box-shadow: 0px 2px 4px rgba(0,0,0,0.02);
     }
     .stTabs [data-baseweb="tab-list"] { background-color: #ffffff; border-bottom: 2px solid #e0e3eb; gap: 10px; }
     .stTabs [data-baseweb="tab"] { color: #787b86; padding: 10px 15px; font-weight: 600; }
     .stTabs [aria-selected="true"] { color: #2962FF !important; border-bottom: 2px solid #2962FF !important; }
-    [data-testid="stMetricValue"] { font-size: 1.2rem !important; font-weight: 700; color: #131722;}
+    
+    /* Metric Styling Overrides for Ticker Tape */
+    [data-testid="stMetricValue"] { font-size: 1.4rem !important; font-weight: 700; color: #131722; margin-top: -10px;}
     [data-testid="stMetricDelta"] svg { display: none; }
     
     /* Clean Watchlist - Hide Checkboxes but keep row selection */
@@ -34,14 +36,24 @@ st.markdown("""
     ::-webkit-scrollbar-thumb { background: #c1c4cd; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #a1a5af; }
     h1, h2, h3, h4, h5, h6 { color: #131722 !important; font-weight: 600 !important; }
-    p, span, div { color: #131722; }
     hr { border-color: #e0e3eb; margin-top: 10px; margin-bottom: 10px;}
-    .stButton > button { border: 1px solid #e0e3eb; background-color: transparent; color: #787b86; transition: 0.3s; width: 100%;}
+    
+    /* Subtle Expand Button Styling */
+    .stButton > button { border: 1px solid #e0e3eb; background-color: transparent; color: #787b86; transition: 0.2s; width: 100%; border-radius: 4px;}
     .stButton > button:hover { border: 1px solid #2962FF; color: #2962FF; background-color: #f0f3fa;}
 </style>
 """, unsafe_allow_html=True)
 
 st.title("🌍 Ratio Charts Conviction Builder")
+
+# --- CURRENCY MAPPING ENGINE ---
+CURRENCY_MAP = {
+    "S&P 500": "$", "Nasdaq 100": "$", "Dow Jones": "$", "Russell 2000": "$", "VIX": "",
+    "Broad Market 500 (IND)": "₹", "Nifty 50": "₹", "Nifty Bank": "₹", "Nifty IT": "₹", "Nifty Auto": "₹", "Nifty Pharma": "₹", "Nifty Metal": "₹", "Nifty Energy": "₹", "Nifty FMCG": "₹", "Nifty Realty": "₹", "Nifty PSU Bank": "₹",
+    "Gold (Spot)": "$", "Silver": "$", "Crude Oil": "$", "Bitcoin": "$", "Ethereum": "$",
+    "US 20+ Yr Treasury": "$", "US Tech ETF": "$", "US Fin ETF": "$", "US Healthcare ETF": "$", "US Energy ETF": "$", "Emerging Markets": "$",
+    "FTSE 100": "£", "DAX": "€", "STOXX 50": "€", "Nikkei 225": "¥", "ASX 200": "A$"
+}
 
 # --- STATE MANAGEMENT (ASSETS & WATCHLISTS) ---
 if 'asset_dict' not in st.session_state:
@@ -51,15 +63,16 @@ if 'asset_dict' not in st.session_state:
         "Nifty Bank": "^NSEBANK", "Nifty IT": "^CNXIT", "Nifty Auto": "^CNXAUTO", "Nifty Pharma": "^CNXPHARMA", 
         "Nifty Metal": "^CNXMETAL", "Nifty Energy": "^CNXENERGY", "Nifty FMCG": "^CNXFMCG", "Nifty Realty": "^CNXREALTY", "Nifty PSU Bank": "^CNXPSUBANK",
         "Gold (Spot)": "GC=F", "Silver": "SI=F", "Crude Oil": "CL=F", "Bitcoin": "BTC-USD", "Ethereum": "ETH-USD",
-        "US 20+ Yr Treasury": "TLT", "US Tech ETF": "XLK", "US Fin ETF": "XLF", "US Healthcare ETF": "XLV", "US Energy ETF": "XLE", "Emerging Markets": "EEM"
+        "US 20+ Yr Treasury": "TLT", "US Tech ETF": "XLK", "US Fin ETF": "XLF", "US Healthcare ETF": "XLV", "US Energy ETF": "XLE", "Emerging Markets": "EEM",
+        "FTSE 100": "^FTSE", "DAX": "^GDAXI", "STOXX 50": "^STOXX50E", "Nikkei 225": "^N225", "ASX 200": "^AXJO"
     }
 
 if 'watchlists' not in st.session_state:
     st.session_state.watchlists = {
-        "⭐ My Favorites": {"S&P 500": "^GSPC", "Nifty 50": "^NSEI", "Gold (Spot)": "GC=F", "Bitcoin": "BTC-USD"},
+        "⭐ Global Macro": {"S&P 500": "^GSPC", "DAX": "^GDAXI", "Nikkei 225": "^N225", "Gold (Spot)": "GC=F"},
         "🔥 Tech Watch": {"Nasdaq 100": "^NDX", "US Tech ETF": "XLK", "Nifty IT": "^CNXIT"}
     }
-if 'active_wl' not in st.session_state: st.session_state.active_wl = "⭐ My Favorites"
+if 'active_wl' not in st.session_state: st.session_state.active_wl = "⭐ Global Macro"
 if 'target_asset' not in st.session_state: st.session_state.target_asset = "S&P 500"
 
 # --- SIDEBAR: COLLAPSIBLE ARCHITECTURE ---
@@ -88,18 +101,17 @@ with st.sidebar.expander("⚙️ Asset Selection", expanded=True):
 
 with st.sidebar.expander("⏱️ Time & Style", expanded=True):
     c1, c2 = st.columns(2)
-    # Default to 'max' so Plotly's range selectors have enough data to work with
     with c1: timeframe = st.selectbox("Data Fetch", ("1mo", "3mo", "6mo", "1y", "2y", "5y", "max"), index=6)
     with c2: interval_selection = st.selectbox("Interval", ("1d", "1wk", "1mo"))
     chart_type = st.selectbox("Style", ("Candlestick", "Bar (OHLC)", "Line"))
 
 with st.sidebar.expander("📈 Technicals & Overlays", expanded=True):
+    show_volume = st.checkbox("Show Volume Bar", value=True)
     selected_overlays = st.multiselect("Overlays", ["21 EMA", "50 SMA", "200 EMA", "AVWAP"], default=["50 SMA"])
     selected_oscillators = st.multiselect("Oscillators", ["Volume", "RSI (14)", "MACD (12, 26, 9)"], default=["Volume"])
 
 # --- HELPERS ---
 def format_large_number(num):
-    """Formats large numbers for the HUD Volume display"""
     if np.isnan(num): return "0"
     if num >= 1e9: return f"{num/1e9:.2f}B"
     if num >= 1e6: return f"{num/1e6:.2f}M"
@@ -143,8 +155,6 @@ def fetch_bulk_watchlist(tickers_dict):
                     last, prev = col.iloc[-1], col.iloc[-2]
                     chg = ((last - prev) / prev) * 100
                     results.append({"Asset": name, "Price": round(last, 2), "Chg %": round(chg, 2)})
-                elif len(col) == 1:
-                    results.append({"Asset": name, "Price": round(col.iloc[-1], 2), "Chg %": 0.00})
         return pd.DataFrame(results)
     except: return pd.DataFrame()
 
@@ -155,8 +165,7 @@ def fetch_market_news(keyword="None"):
     current_time = time.time()
     
     base_keywords = ['rate', 'yield', 'treasury', 'inflation', 'cpi', 'fed', 'rbi', 'bank', 'earnings', 'geopolitic']
-    if keyword != "None":
-        base_keywords.append(keyword.lower().split(" ")[0]) 
+    if keyword != "None": base_keywords.append(keyword.lower().split(" ")[0]) 
         
     for url in feed_urls:
         try:
@@ -178,9 +187,9 @@ TV_CONFIG = {
     'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'drawclosedpath', 'drawcircle', 'drawrect', 'eraseshape'],
     'displayModeBar': True, 'displaylogo': False, 'scrollZoom': True
 }
-STATIC_CONFIG = {'displayModeBar': False, 'scrollZoom': False}
+STATIC_CONFIG = {'displayModeBar': False, 'scrollZoom': False} # Clean mode for static grid
 
-def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, analysis_mode="Ratio", height=650):
+def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol=True, analysis_mode="Ratio", show_hud=True, show_rangeselector=True, height=650):
     if num_name == "None" and den_name == "None": return None
     num_data = fetch_yahoo_data(st.session_state.asset_dict.get(num_name), period_str, interval_str) if num_name != "None" else None
     den_data = fetch_yahoo_data(st.session_state.asset_dict.get(den_name), period_str, interval_str) if den_name != "None" else None
@@ -200,12 +209,9 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
 
     if analysis_mode == "Correlation" and num_name != "None" and den_name != "None":
         c = df['Close_num'].pct_change().rolling(20).corr(df['Close_den'].pct_change())
-        df['Ratio_Close'] = c
-        df['Ratio_Open'] = c
-        df['Ratio_High'] = c
-        df['Ratio_Low'] = c
-        oscillators = [o for o in oscillators if o != "Volume"] # Volume irrelevant for correlation
-        overlays = [] # MAs irrelevant for correlation
+        df['Ratio_Close'] = df['Ratio_Open'] = df['Ratio_High'] = df['Ratio_Low'] = c
+        oscillators = [o for o in oscillators if o != "Volume"] 
+        overlays = [] 
     else:
         df['Ratio_Open'] = df['Open_num'] / df['Open_den']
         df['Ratio_High'] = df['High_num'] / df['High_den']
@@ -213,7 +219,6 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
         df['Ratio_Close'] = df['Close_num'] / df['Close_den']
         c = df['Ratio_Close']
     
-    # Calculate Overlays
     if "50 SMA" in overlays: df['50 SMA'] = c.rolling(50).mean()
     if "21 EMA" in overlays: df['21 EMA'] = c.ewm(span=21).mean()
     if "200 EMA" in overlays: df['200 EMA'] = c.ewm(span=200).mean()
@@ -221,7 +226,6 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
         typ_price = (df['Ratio_High'] + df['Ratio_Low'] + df['Ratio_Close']) / 3
         df['AVWAP'] = (typ_price * df['Volume_num']).cumsum() / df['Volume_num'].cumsum()
 
-    # Calculate Oscillators
     if "RSI (14)" in oscillators: df['RSI'] = calculate_rsi(c, 14)
     if "MACD (12, 26, 9)" in oscillators:
         df['MACD_Line'] = c.ewm(span=12).mean() - c.ewm(span=26).mean()
@@ -234,17 +238,12 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
     
     num_rows = 1 + (1 if has_volume else 0) + len(active_osc)
     
-    if not has_volume and not active_osc:
-        row_heights = [1.0]
-    elif has_volume and not active_osc:
-        row_heights = [0.82, 0.18] # Give Volume just 18% of space
-    elif not has_volume and active_osc:
-        row_heights = [0.70] + [0.30 / len(active_osc)] * len(active_osc)
-    else: 
-        row_heights = [0.65, 0.15] + [0.20 / len(active_osc)] * len(active_osc)
+    if not has_volume and not active_osc: row_heights = [1.0]
+    elif has_volume and not active_osc: row_heights = [0.82, 0.18]
+    elif not has_volume and active_osc: row_heights = [0.70] + [0.30 / len(active_osc)] * len(active_osc)
+    else: row_heights = [0.65, 0.15] + [0.20 / len(active_osc)] * len(active_osc)
     
     fig = make_subplots(rows=num_rows, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=row_heights)
-
     TV_GREEN, TV_RED, TV_BLUE, TV_GRID, BG = '#089981', '#f23645', '#2962FF', '#e0e3eb', '#ffffff'
 
     # 1. Main Chart
@@ -282,48 +281,42 @@ def render_chart(num_name, den_name, period_str, interval_str, c_type, overlays,
         fig.add_trace(go.Bar(x=df.index, y=df['MACD_Hist'], marker_color=hc), row=curr_row, col=1)
         fig.update_yaxes(title_text="MACD", row=curr_row, col=1)
 
-    # --- TRADINGVIEW HUD (Heads Up Display) ---
-    last_row = df.iloc[-1]
+    # --- TRADINGVIEW HUD (Only if requested) ---
     dec = ".2f" if analysis_mode == "Correlation" or den_name == "None" else ".4f"
-    
-    hud_text = f"<b>O:</b> {last_row['Ratio_Open']:{dec}} &nbsp; <b>H:</b> {last_row['Ratio_High']:{dec}} &nbsp; <b>L:</b> {last_row['Ratio_Low']:{dec}} &nbsp; <b>C:</b> {last_row['Ratio_Close']:{dec}}"
-    if has_volume: hud_text += f" &nbsp; <b>Vol:</b> {format_large_number(last_row['Volume_num'])}"
-    
-    for ind in overlays:
-        if ind in df.columns:
-            val = df[ind].iloc[-1]
-            if not np.isnan(val):
-                hud_text += f" &nbsp; <span style='color:{colors.get(ind, '#000')}'><b>{ind}:</b> {val:{dec}}</span>"
+    if show_hud:
+        last_row = df.iloc[-1]
+        curr_symbol = CURRENCY_MAP.get(num_name, "") if den_name == "None" else ""
+        hud_text = f"<b>O:</b> {curr_symbol}{last_row['Ratio_Open']:{dec}} &nbsp; <b>H:</b> {curr_symbol}{last_row['Ratio_High']:{dec}} &nbsp; <b>L:</b> {curr_symbol}{last_row['Ratio_Low']:{dec}} &nbsp; <b>C:</b> {curr_symbol}{last_row['Ratio_Close']:{dec}}"
+        if has_volume: hud_text += f" &nbsp; <b>Vol:</b> {format_large_number(last_row['Volume_num'])}"
+        for ind in overlays:
+            if ind in df.columns and not np.isnan(df[ind].iloc[-1]):
+                hud_text += f" &nbsp; <span style='color:{colors.get(ind, '#000')}'><b>{ind}:</b> {df[ind].iloc[-1]:{dec}}</span>"
 
-    fig.add_annotation(
-        xref="x domain", yref="y domain", x=0.01, y=0.99, text=hud_text,
-        showarrow=False, font=dict(size=11, color="#131722"), align="left", bgcolor="rgba(255,255,255,0.6)", row=1, col=1
-    )
+        fig.add_annotation(xref="x domain", yref="y domain", x=0.01, y=0.99, text=hud_text, showarrow=False, font=dict(size=11, color="#131722"), align="left", bgcolor="rgba(255,255,255,0.7)", row=1, col=1)
 
-    # --- RANGE SELECTORS & FORMATTING ---
-    fig.update_layout(
-        template="plotly_white", plot_bgcolor=BG, paper_bgcolor=BG,
-        xaxis_rangeslider_visible=False, height=height, margin=dict(l=10, r=45, t=10, b=10), showlegend=False,
-        hovermode="x unified", dragmode="pan", font=dict(color="#131722", size=11)
-    )
+    # --- LAYOUT FORMATTING & RANGE SELECTORS ---
+    fig.update_layout(template="plotly_white", plot_bgcolor=BG, paper_bgcolor=BG, xaxis_rangeslider_visible=False, height=height, margin=dict(l=10, r=45, t=10, b=10), showlegend=False, hovermode="x unified", dragmode="pan", font=dict(color="#131722", size=11))
     
     x_format, d_tick = ("%d %b %Y", None) if period_str in ["1mo", "3mo", "6mo"] else ("%b %Y", "M1" if period_str == "1y" else "M3")
     
-    # Inject Native Plotly Buttons
-    fig.update_xaxes(
-        rangeselector=dict(
-            buttons=list([
-                dict(count=1, label="1m", step="month", stepmode="backward"),
-                dict(count=3, label="3m", step="month", stepmode="backward"),
-                dict(count=6, label="6m", step="month", stepmode="backward"),
-                dict(count=1, label="YTD", step="year", stepmode="todate"),
-                dict(count=1, label="1y", step="year", stepmode="backward"),
-                dict(step="all", label="All")
-            ]),
-            bgcolor="#ffffff", activecolor="#f0f3fa", bordercolor="#e0e3eb", font=dict(color="#131722")
-        ),
-        showgrid=True, gridcolor=TV_GRID, tickformat=x_format, dtick=d_tick, showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash", row=1, col=1
-    )
+    if show_rangeselector:
+        fig.update_xaxes(
+            rangeselector=dict(
+                buttons=list([
+                    dict(count=1, label="1m", step="month", stepmode="backward"),
+                    dict(count=3, label="3m", step="month", stepmode="backward"),
+                    dict(count=6, label="6m", step="month", stepmode="backward"),
+                    dict(count=1, label="YTD", step="year", stepmode="todate"),
+                    dict(count=1, label="1y", step="year", stepmode="backward"),
+                    dict(step="all", label="All")
+                ]),
+                bgcolor="#ffffff", activecolor="#f0f3fa", bordercolor="#e0e3eb", font=dict(color="#131722")
+            ),
+            showgrid=True, gridcolor=TV_GRID, tickformat=x_format, dtick=d_tick, showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash", row=1, col=1
+        )
+    else:
+        fig.update_xaxes(showgrid=True, gridcolor=TV_GRID, tickformat=x_format, dtick=d_tick, showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash", row=1, col=1)
+        
     fig.update_yaxes(showgrid=True, gridcolor=TV_GRID, side="right", tickformat=dec, showspikes=True, spikecolor="#787b86", spikesnap="cursor", spikemode="across", spikethickness=1, spikedash="dash", row=1, col=1)
     
     return fig
@@ -334,7 +327,7 @@ def expand_chart_modal(num_name, den_name):
     title = f"{num_name}" if den_name == "None" else f"{num_name} / {den_name}"
     st.markdown(f"### {title}")
     with st.spinner("Loading High-Res Interactive Engine..."):
-        fig = render_chart(num_name, den_name, "max", "1d", "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], height=650)
+        fig = render_chart(num_name, den_name, "max", "1d", "Candlestick", ["50 SMA", "200 EMA"], ["Volume", "RSI (14)"], show_hud=True, show_rangeselector=True, height=650)
         if fig: st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
 
 # --- REUSABLE PANELS ---
@@ -371,19 +364,22 @@ def render_watchlist(key_prefix):
         wl_data = fetch_bulk_watchlist(st.session_state.watchlists[active_wl])
         if not wl_data.empty:
             df = pd.DataFrame(wl_data)
-            styled_df = df.style.map(lambda x: 'color: #089981; font-weight: bold;' if x > 0 else 'color: #f23645; font-weight: bold;' if x < 0 else '', subset=['Chg %']).format({"Price": "{:.2f}", "Chg %": "{:+.2f}%"})
+            # Add Native Currency Symbols to Watchlist
+            df['Price'] = df.apply(lambda row: f"{CURRENCY_MAP.get(row['Asset'], '')}{row['Price']:.2f}", axis=1)
+            
+            styled_df = df.style.map(lambda x: 'color: #089981; font-weight: bold;' if x > 0 else 'color: #f23645; font-weight: bold;' if x < 0 else '', subset=['Chg %']).format({"Chg %": "{:+.2f}%"})
             event = st.dataframe(styled_df, hide_index=True, use_container_width=True, on_select="rerun", selection_mode="single-row", key=f"{key_prefix}_df")
             if len(event.selection.rows) > 0:
                 selected_asset = df.iloc[event.selection.rows[0]]["Asset"]
                 st.session_state.target_asset = selected_asset
-                st.success(f"**{selected_asset}** routed to Dynamic Explorer.")
+                st.success(f"**{selected_asset}** loaded into Explorer.")
         else: st.caption("No data.")
 
 def render_news_feed(height):
     st.subheader("📰 Recent Market News")
     with st.container(border=True, height=height):
         news = fetch_market_news(st.session_state.target_asset)
-        if not news: st.info("No updates in the last 24 hours matching criteria.")
+        if not news: st.info("No updates in the last 24 hours.")
         else:
             for item in news:
                 st.markdown(f"**[{item['title']}]({item['link']})**")
@@ -397,24 +393,39 @@ tab1, tab2 = st.tabs(["🖥️ Macro Overview (Grid)", "🔍 Dynamic Explorer"])
 # --- SCREEN 1: THE MACRO GRID ---
 with tab1:
     st.subheader("🌐 Live Global Markets")
-    top_indices = ["S&P 500", "Nasdaq 100", "Nifty 50", "Gold (Spot)", "Bitcoin", "Crude Oil"]
-    cols_top = st.columns(len(top_indices))
+    # Expanding to 12 top assets across 2 rows
+    top_indices = [
+        "S&P 500", "Nasdaq 100", "DAX", "FTSE 100", "STOXX 50", "Nikkei 225",
+        "ASX 200", "Nifty 50", "Gold (Spot)", "Crude Oil", "Bitcoin", "US 20+ Yr Treasury"
+    ]
     
-    for i, idx_name in enumerate(top_indices):
-        with cols_top[i]:
-            ticker = st.session_state.asset_dict[idx_name]
-            data = fetch_yahoo_data(ticker, "5d", "1d")
-            
-            if data is not None and not data.empty and len(data) >= 2:
-                try:
-                    last_close = float(data['Close'].iloc[-1])
-                    prev_close = float(data['Close'].iloc[-2])
-                    pct_change = ((last_close - prev_close) / prev_close) * 100
-                    st.metric(label=idx_name, value=f"{last_close:,.2f}", delta=f"{pct_change:.2f}%")
-                except Exception: st.metric(label=idx_name, value="Data Error")
-            else: st.metric(label=idx_name, value="N/A")
-            
-            if st.button(f"🗖 Expand {idx_name}", key=f"top_{i}"): expand_chart_modal(idx_name, "None")
+    with st.spinner("Syncing Global Markets..."):
+        for row in range(0, len(top_indices), 6):
+            cols_top = st.columns(6)
+            for col_idx in range(6):
+                idx = row + col_idx
+                if idx < len(top_indices):
+                    idx_name = top_indices[idx]
+                    ticker = st.session_state.asset_dict[idx_name]
+                    curr = CURRENCY_MAP.get(idx_name, "")
+                    
+                    with cols_top[col_idx]:
+                        with st.container(border=True):
+                            c_title, c_btn = st.columns([4,1])
+                            c_title.markdown(f"<div style='font-size:0.85rem; font-weight:600; color:#787b86;'>{idx_name}</div>", unsafe_allow_html=True)
+                            
+                            # Clean, subtle ⛶ expand button
+                            if c_btn.button("⛶", key=f"top_exp_{idx_name}", help="Expand Chart"):
+                                expand_chart_modal(idx_name, "None")
+                                
+                            data = fetch_yahoo_data(ticker, "5d", "1d")
+                            if data is not None and not data.empty and len(data) >= 2:
+                                try:
+                                    last_close, prev_close = float(data['Close'].iloc[-1]), float(data['Close'].iloc[-2])
+                                    pct_change = ((last_close - prev_close) / prev_close) * 100
+                                    st.metric(label="val", value=f"{curr}{last_close:,.2f}", delta=f"{pct_change:.2f}%", label_visibility="collapsed")
+                                except Exception: st.metric(label="val", value="Error", label_visibility="collapsed")
+                            else: st.metric(label="val", value="N/A", label_visibility="collapsed")
                     
     st.markdown("---")
     col_main, col_news = st.columns([3, 1]) 
@@ -426,27 +437,27 @@ with tab1:
             st.caption("Benchmark: Broad Market 500 (IND)")
             nse_list = ["Nifty Bank", "Nifty IT", "Nifty Auto", "Nifty Pharma", "Nifty Metal", "Nifty Energy", "Nifty FMCG", "Nifty Realty", "Nifty PSU Bank"]
             cols = st.columns(3)
-            with st.spinner("Fetching NSE Data..."):
-                for idx, sec in enumerate(nse_list):
-                    with cols[idx % 3], st.container(border=True):
-                        head1, head2 = st.columns([4, 1])
-                        head1.markdown(f"**{sec}**")
-                        if head2.button("🗖", key=f"btn_nse_{idx}"): expand_chart_modal(sec, "Broad Market 500 (IND)")
-                        fig = render_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", height=300)
-                        if fig: st.plotly_chart(fig, use_container_width=True, key=f"nse_c_{idx}", config=STATIC_CONFIG)
+            for idx, sec in enumerate(nse_list):
+                with cols[idx % 3], st.container(border=True):
+                    head1, head2 = st.columns([4, 1])
+                    head1.markdown(f"**{sec}**")
+                    if head2.button("⛶", key=f"btn_nse_{idx}"): expand_chart_modal(sec, "Broad Market 500 (IND)")
+                    
+                    # Clean Sparkline Grid - No HUD, No Range Selector, No Toolbar
+                    fig = render_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
+                    if fig: st.plotly_chart(fig, use_container_width=True, key=f"nse_c_{idx}", config=STATIC_CONFIG)
                         
         with macro_tabs[1]:
             st.caption("Benchmark: S&P 500")
             us_list = ["Nasdaq 100", "Russell 2000", "US Tech ETF", "US Fin ETF", "US Healthcare ETF", "US Energy ETF"]
             cols = st.columns(3)
-            with st.spinner("Fetching US Data..."):
-                for idx, sec in enumerate(us_list):
-                    with cols[idx % 3], st.container(border=True):
-                        head1, head2 = st.columns([4, 1])
-                        head1.markdown(f"**{sec}**")
-                        if head2.button("🗖", key=f"btn_us_{idx}"): expand_chart_modal(sec, "S&P 500")
-                        fig = render_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", height=300)
-                        if fig: st.plotly_chart(fig, use_container_width=True, key=f"us_c_{idx}", config=STATIC_CONFIG)
+            for idx, sec in enumerate(us_list):
+                with cols[idx % 3], st.container(border=True):
+                    head1, head2 = st.columns([4, 1])
+                    head1.markdown(f"**{sec}**")
+                    if head2.button("⛶", key=f"btn_us_{idx}"): expand_chart_modal(sec, "S&P 500")
+                    fig = render_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=220)
+                    if fig: st.plotly_chart(fig, use_container_width=True, key=f"us_c_{idx}", config=STATIC_CONFIG)
 
         with macro_tabs[2]:
             st.caption("Ratios measuring Risk-On vs Risk-Off behaviors")
@@ -455,14 +466,13 @@ with tab1:
                 ("Emerging Markets", "S&P 500", "EM vs Developed"), ("Bitcoin", "Gold (Spot)", "Digital vs Physical Gold")
             ]
             cols = st.columns(2)
-            with st.spinner("Fetching Macro Data..."):
-                for idx, (num, den, title) in enumerate(macro_pairs):
-                    with cols[idx % 2], st.container(border=True):
-                        head1, head2 = st.columns([6, 1])
-                        head1.markdown(f"**{title}**<br>({num} / {den})", unsafe_allow_html=True)
-                        if head2.button("🗖", key=f"btn_glb_{idx}"): expand_chart_modal(num, den)
-                        fig = render_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", height=320)
-                        if fig: st.plotly_chart(fig, use_container_width=True, key=f"glb_c_{idx}", config=STATIC_CONFIG)
+            for idx, (num, den, title) in enumerate(macro_pairs):
+                with cols[idx % 2], st.container(border=True):
+                    head1, head2 = st.columns([6, 1])
+                    head1.markdown(f"**{title}**<br>({num} / {den})", unsafe_allow_html=True)
+                    if head2.button("⛶", key=f"btn_glb_{idx}"): expand_chart_modal(num, den)
+                    fig = render_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], analysis_mode="Ratio", show_hud=False, show_rangeselector=False, height=240)
+                    if fig: st.plotly_chart(fig, use_container_width=True, key=f"glb_c_{idx}", config=STATIC_CONFIG)
 
     with col_news:
         render_watchlist(key_prefix="tab1")
@@ -475,16 +485,29 @@ with tab2:
     
     with col_dyn_main:
         c1, c2 = st.columns([4, 1])
-        if benchmark_name == "None" and selected_asset_name != "None": c1.subheader(f"Price: {selected_asset_name}")
-        elif selected_asset_name == "None" and benchmark_name != "None": c1.subheader(f"Inverse: 1 / {benchmark_name}")
-        elif selected_asset_name == "None" and benchmark_name == "None": c1.subheader("No Assets Selected")
-        else: c1.subheader(f"Ratio: {selected_asset_name} / {benchmark_name}")
+        
+        # Dynamic Price Header Integration
+        if selected_asset_name != "None":
+            tkr = st.session_state.asset_dict[selected_asset_name]
+            data = fetch_yahoo_data(tkr, "5d", "1d")
+            curr = CURRENCY_MAP.get(selected_asset_name, "")
+            if data is not None and not data.empty and len(data) >= 2:
+                last_px, prev_px = data['Close'].iloc[-1], data['Close'].iloc[-2]
+                pct_chg = ((last_px - prev_px) / prev_px) * 100
+                clr = "#089981" if pct_chg >= 0 else "#f23645"
+                sgn = "+" if pct_chg >= 0 else ""
+                
+                header_title = f"{selected_asset_name} / {benchmark_name}" if benchmark_name != "None" else f"{selected_asset_name}"
+                c1.markdown(f"<h3 style='margin-bottom:0;'>{header_title} &nbsp;<span style='color:{clr}; font-size:1.3rem;'>{curr}{last_px:,.2f} ({sgn}{pct_chg:.2f}%)</span></h3>", unsafe_allow_html=True)
+            else: c1.subheader(f"{selected_asset_name}")
+        else: c1.subheader("No Assets Selected")
         
         with c2:
             if st.button("🔄 Clear Screen", use_container_width=True): st.rerun()
 
         with st.spinner("Rendering Chart..."), st.container(border=True):
-            fig = render_chart(selected_asset_name, benchmark_name, timeframe, interval_selection, chart_type, selected_overlays, selected_oscillators, analysis_mode=analysis_mode.split()[0], height=700)
+            # Dynamic Explorer gets Full HUD and Range Selectors
+            fig = render_chart(selected_asset_name, benchmark_name, timeframe, interval_selection, chart_type, selected_overlays, selected_oscillators, show_vol=show_volume, analysis_mode=analysis_mode.split()[0], show_hud=True, show_rangeselector=True, height=700)
             if fig:
                 st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
             elif selected_asset_name == "None" and benchmark_name == "None":
