@@ -3,6 +3,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots  # <--- Restored missing import
 import time
 import feedparser
 import json
@@ -72,7 +73,7 @@ CURRENCY_MAP = {
     "FTSE 100": "£", "DAX": "€", "STOXX 50": "€", "Nikkei 225": "¥", "ASX 200": "A$"
 }
 
-# --- BUG-PROOF STATE MANAGEMENT ---
+# --- BULLETPROOF STATE MANAGEMENT ---
 DEFAULT_ASSETS = {
     "S&P 500": "^GSPC", "Nasdaq 100": "^NDX", "Dow Jones": "^DJI", "Russell 2000": "^RUT", "VIX": "^VIX",
     "Broad Market 500 (IND)": "BSE-500.BO", "Nifty 50": "^NSEI", 
@@ -157,11 +158,10 @@ with st.sidebar.expander("🧹 Data & History Management", expanded=False):
 
 st.sidebar.markdown("---")
 
-# --- ASSET SELECTION WITH DECOUPLED STATE BINDINGS ---
+# --- ASSET SELECTION WITH INVERT BUTTON ---
 with st.sidebar.expander("⚙️ Asset Selection", expanded=True):
     asset_options = ["None"] + list(st.session_state.asset_dict.keys())
     
-    # Use index to sync widgets instead of hard key-binding
     idx_num = asset_options.index(st.session_state.target_num) if st.session_state.target_num in asset_options else 1
     idx_den = asset_options.index(st.session_state.target_den) if st.session_state.target_den in asset_options else 0
 
@@ -170,7 +170,6 @@ with st.sidebar.expander("⚙️ Asset Selection", expanded=True):
         selected_num = st.selectbox("Numerator", asset_options, index=idx_num) 
         selected_den = st.selectbox("Denominator", asset_options, index=idx_den) 
         
-        # If user actively changes dropdown, update state and trigger rerun safely
         if selected_num != st.session_state.target_num or selected_den != st.session_state.target_den:
             st.session_state.target_num = selected_num
             st.session_state.target_den = selected_den
@@ -732,114 +731,6 @@ with tab1:
     with col_news:
         st.subheader("📋 Watchlists")
         with st.container(border=True):
-            active_wl = st.selectbox("Select", list(st.session_state.watchlists.keys()), index=list(st.session_state.watchlists.keys()).index(st.session_state.active_wl), label_visibility="collapsed", key="wl_sel")
-            st.session_state.active_wl = active_wl
-            
-            wl_data = fetch_bulk_watchlist(st.session_state.watchlists[active_wl])
-            if not wl_data.empty:
-                df = pd.DataFrame(wl_data)
-                df['Price'] = df.apply(lambda row: f"{CURRENCY_MAP.get(row['Asset'], '')}{row['Price']:.2f}", axis=1)
-                styled_df = df.style.map(lambda x: 'color: #089981; font-weight: bold;' if x > 0 else 'color: #f23645; font-weight: bold;' if x < 0 else '', subset=['Chg %']).format({"Chg %": "{:+.2f}%"})
-                event = st.dataframe(styled_df, hide_index=True, use_container_width=True, on_select="rerun", selection_mode="single-row", key="wl_df")
-                if len(event.selection.rows) > 0:
-                    selected_asset = df.iloc[event.selection.rows[0]]["Asset"]
-                    st.session_state.target_num = selected_asset
-                    st.session_state.target_den = "None"
-                    st.rerun()
-
-        st.subheader("📰 Sentiment Feed")
-        with st.container(border=True, height=350):
-            news = fetch_market_news(st.session_state.target_num)
-            for item in news:
-                st.markdown(f"{item['tag']} **[{item['title']}]({item['link']})**")
-                st.caption(f"🕒 {item.get('published', 'Recent').replace('+0000', '').strip()}")
-                st.markdown("---")
-
-# --- SCREEN 2: DYNAMIC EXPLORER ---
-with tab2:
-    col_dyn_main, col_dyn_news = st.columns([3, 1]) 
-    
-    with col_dyn_main:
-        c1, c2, c3 = st.columns([3, 1, 1])
-        
-        current_pair = (st.session_state.target_num, st.session_state.target_den)
-        if current_pair in st.session_state.recent_ratios: st.session_state.recent_ratios.remove(current_pair)
-        st.session_state.recent_ratios.insert(0, current_pair)
-        st.session_state.recent_ratios = st.session_state.recent_ratios[:6]
-        
-        if st.session_state.target_num != "None":
-            tkr = st.session_state.asset_dict[st.session_state.target_num]
-            data = fetch_yahoo_data(tkr, "5d", "1d")
-            curr = CURRENCY_MAP.get(st.session_state.target_num, "")
-            if data is not None and not data.empty and len(data) >= 2:
-                last_px, prev_px = data['Close'].iloc[-1], data['Close'].iloc[-2]
-                pct_chg = ((last_px - prev_px) / prev_px) * 100
-                clr = "#089981" if pct_chg >= 0 else "#f23645"
-                sgn = "+" if pct_chg >= 0 else ""
-                
-                header_title = f"{st.session_state.target_num} / {st.session_state.target_den}" if st.session_state.target_den != "None" else f"{st.session_state.target_num}"
-                c1.markdown(f"<h3 style='margin-bottom:0;'>{header_title} &nbsp;<span style='color:{clr}; font-size:1.3rem;'>{curr}{last_px:,.2f} ({sgn}{pct_chg:.2f}%)</span></h3>", unsafe_allow_html=True)
-                
-                if st.session_state.target_den == "None":
-                    funds = fetch_fundamentals(tkr)
-                    if funds:
-                        st.markdown(f"""
-                        <div class='tear-sheet'>
-                            <div><span class='tear-val'>52W High:</span> {curr}{funds['52W High']}</div>
-                            <div><span class='tear-val'>52W Low:</span> {curr}{funds['52W Low']}</div>
-                            <div><span class='tear-val'>Mkt Cap:</span> {curr}{funds['Mkt Cap']}</div>
-                            <div><span class='tear-val'>P/E (TTM):</span> {funds['P/E (TTM)']}</div>
-                            <div><span class='tear-val'>Div Yield:</span> {funds['Div Yield']}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-            else: c1.subheader(f"{st.session_state.target_num}")
-        else: c1.subheader("No Assets Selected")
-        
-        with c2:
-            is_saved = current_pair in st.session_state.fav_ratios
-            btn_label = "✅ Saved" if is_saved else "⭐ Save Ratio"
-            if st.button(btn_label, disabled=is_saved, use_container_width=True):
-                st.session_state.fav_ratios.append(current_pair)
-                st.rerun()
-                
-        with c3:
-            if st.button("🗑️ Clear Screen", use_container_width=True): st.rerun()
-
-        st.caption("💡 *You are now using the ultra-high-performance **TradingView Lightweight Charts** engine. Scroll to zoom, click and drag to pan.*")
-        with st.spinner("Rendering WebGL Engine..."):
-            html_payload, height_px = render_tv_lightweight(
-                st.session_state.target_num, st.session_state.target_den, 
-                timeframe, interval_selection, chart_type, 
-                selected_overlays, selected_oscillators, show_volume, analysis_mode.split()[0]
-            )
-            if html_payload:
-                components.html(html_payload, height=height_px, scrolling=False)
-            
-        if st.session_state.target_num != "None":
-            with st.expander("📅 Historical Seasonality Matrix (Monthly % Returns)", expanded=False):
-                with st.spinner("Calculating Seasonality..."):
-                    try:
-                        s_data = fetch_yahoo_data(st.session_state.asset_dict[st.session_state.target_num], "5y", "1d")
-                        if s_data is not None and not s_data.empty:
-                            s_data['Year'] = s_data.index.year
-                            s_data['Month'] = s_data.index.month
-                            monthly_rtn = s_data.groupby(['Year', 'Month'])['Close'].apply(lambda x: (x.iloc[-1]/x.iloc[0] - 1)*100).unstack()
-                            monthly_rtn.columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-                            
-                            fig_sea = go.Figure(data=go.Heatmap(
-                                z=monthly_rtn.values, x=monthly_rtn.columns, y=monthly_rtn.index,
-                                colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
-                                text=monthly_rtn.round(2).fillna("").astype(str) + "%", texttemplate="%{text}", textfont={"color":"#131722"},
-                                zmid=0, showscale=False
-                            ))
-                            fig_sea.update_layout(height=250, margin=dict(l=10, r=10, t=30, b=10), template="plotly_white")
-                            fig_sea.update_yaxes(autorange="reversed", type='category')
-                            st.plotly_chart(fig_sea, use_container_width=True, config={'displayModeBar': False})
-                    except: st.caption("Seasonality data unavailable for this asset.")
-
-    with col_dyn_news:
-        st.subheader("📋 Watchlists")
-        with st.container(border=True):
             active_wl = st.selectbox("Select", list(st.session_state.watchlists.keys()), index=list(st.session_state.watchlists.keys()).index(st.session_state.active_wl), label_visibility="collapsed", key="wl_sel_dyn")
             st.session_state.active_wl = active_wl
             
@@ -883,6 +774,7 @@ with tab3:
                 
                 corr_matrix = corr_data.pct_change().corr().round(2)
                 
+                # TV Lightweight charts CANNOT do heatmaps. Retaining Plotly specifically for this visualization.
                 fig_corr = go.Figure(data=go.Heatmap(
                     z=corr_matrix.values, x=corr_matrix.columns, y=corr_matrix.index,
                     colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
