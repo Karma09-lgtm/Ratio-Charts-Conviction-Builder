@@ -6,73 +6,173 @@ import plotly.graph_objects as go
 import time
 import feedparser
 import json
-import requests
+import sqlite3
+import hashlib
+from datetime import datetime
 import streamlit.components.v1 as components
 
-# --- PAGE CONFIGURATION & TIMER START ---
+# --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Ratio Charts Conviction Builder", layout="wide", initial_sidebar_state="expanded")
 start_time = time.time()
 
-# --- PREMIUM TRADINGVIEW LIGHT-THEME CSS ---
+# --- PREMIUM CSS ---
 st.markdown("""
 <style>
     .stApp { background-color: #f8f9fd; color: #131722; font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
-    
     [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
         background-color: #ffffff; border-radius: 8px; border: 1px solid #e0e3eb; padding: 12px; box-shadow: 0px 2px 4px rgba(19, 23, 34, 0.03);
     }
-    
-    /* Custom Programmatic Tabs */
     div[role="radiogroup"] { flex-direction: row; gap: 2rem; border-bottom: 2px solid #e0e3eb; margin-bottom: 20px;}
     div[role="radiogroup"] label { margin: 0 !important; cursor: pointer; }
     div[role="radiogroup"] label span[data-baseweb="radio"] { display: none !important; } 
     div[role="radiogroup"] label div[dir="auto"] { font-size: 1.1rem; font-weight: 600; color: #787b86; padding: 10px 5px; transition: 0.2s;}
     div[role="radiogroup"] label[data-checked="true"] div[dir="auto"] { color: #2962FF !important; border-bottom: 2px solid #2962FF !important; }
-    
-    /* Hides Streamlit's native "Press Enter to apply" hint in text boxes */
     [data-testid="InputInstructions"] { display: none !important; }
-    
     [data-testid="stMetricValue"] { font-size: 1.35rem !important; font-weight: 700; color: #131722; margin-top: -15px;}
     [data-testid="stMetricDelta"] { margin-top: -5px; }
     [data-testid="stMetricDelta"] svg { display: none; }
-    
     [data-testid="stDataFrame"] { border: none !important; }
     [data-testid="stDataFrame"] div[data-testid="stCheckbox"] { display: none !important; }
-    
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #f0f3fa; }
     ::-webkit-scrollbar-thumb { background: #c1c4cd; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #a1a5af; }
-    
     h1, h2, h3, h4, h5, h6 { color: #131722 !important; font-weight: 600 !important; }
     hr { border-color: #e0e3eb; margin-top: 10px; margin-bottom: 10px;}
-    
     .stButton > button { border: 1px solid #e0e3eb; background-color: #ffffff; color: #787b86; transition: 0.2s; width: 100%; border-radius: 6px; padding: 4px 8px; font-weight: 500;}
     .stButton > button:hover { border: 1px solid #2962FF; color: #2962FF; background-color: #f0f3fa;}
-    .stButton > button:disabled { border: 1px solid #e0e3eb; background-color: #f8f9fd; color: #089981; font-weight: 600; opacity: 1; }
-    
     .tear-sheet { font-size: 0.85rem; color: #787b86; display: flex; gap: 15px; margin-top: -10px; margin-bottom: 15px; padding: 10px; background: #f8f9fd; border-radius: 6px; border: 1px solid #e0e3eb;}
     .tear-val { font-weight: 700; color: #131722; }
-    .share-btn { display: inline-block; padding: 8px 12px; margin-bottom: 8px; border-radius: 4px; background: #ffffff; border: 1px solid #e0e3eb; color: #131722; text-decoration: none; font-size: 0.9rem; font-weight: 600; width: 100%; text-align: left; transition: 0.2s;}
-    .share-btn:hover { background: #f0f3fa; border-color: #2962FF; color: #2962FF;}
-    
     .ai-box { background: #F8F9FA; border-left: 4px solid #2962FF; padding: 15px 20px; border-radius: 0px 8px 8px 0px; font-size: 0.95rem; color: #333; line-height: 1.6; margin-top: 15px; margin-bottom: 20px;}
     .ai-title { font-weight: 700; color: #131722; margin-bottom: 8px; font-size: 1.05rem; }
+    .auth-box { max-width: 400px; margin: 0 auto; padding: 30px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #e0e3eb; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- HEADER ---
-c_title, c_export = st.columns([8, 2])
-with c_title: 
-    st.title("🌍 Ratio Charts Conviction Builder")
-    st.markdown("<p style='color:#787b86; font-size:0.85rem; margin-top:-15px; margin-bottom:15px;'>Powered by Karma Analytics and Advisory Ltd.</p>", unsafe_allow_html=True)
+# --- SQLITE DATABASE ENGINE ---
+DB_FILE = "terminal_data.db"
 
-with c_export:
-    st.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
-    with st.popover("📤 Share & Export", use_container_width=True):
-        st.markdown("**Share Terminal Setup**")
-        st.markdown("<a href='#' class='share-btn'>𝕏 &nbsp; Share on X</a>", unsafe_allow_html=True)
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password_hash TEXT, created_at TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS user_prefs (username TEXT PRIMARY KEY, fav_ratios TEXT, watchlists TEXT, layout TEXT)''')
+    conn.commit()
+    conn.close()
+
+def hash_pw(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def create_user(username, password):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    try:
+        c.execute("INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)", (username, hash_pw(password), datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        # Insert default preferences
+        default_favs = json.dumps([["Gold (Spot)", "S&P 500"], ["Nasdaq 100", "Russell 2000"]])
+        default_wls = json.dumps({"⭐ Global Macro": {"S&P 500": "^GSPC", "DAX": "^GDAXI", "Nikkei 225": "^N225", "Gold (Spot)": "GC=F"}})
+        default_layout = json.dumps({"ticker": True, "fav": True, "news": True})
+        c.execute("INSERT INTO user_prefs (username, fav_ratios, watchlists, layout) VALUES (?, ?, ?, ?)", (username, default_favs, default_wls, default_layout))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
+def authenticate_user(username, password):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT password_hash FROM users WHERE username=?", (username,))
+    row = c.fetchone()
+    conn.close()
+    if row and row[0] == hash_pw(password):
+        return True
+    return False
+
+def load_user_prefs(username):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT fav_ratios, watchlists, layout FROM user_prefs WHERE username=?", (username,))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return json.loads(row[0]), json.loads(row[1]), json.loads(row[2])
+    return [], {}, {}
+
+def save_user_prefs(username, favs, wls, layout):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE user_prefs SET fav_ratios=?, watchlists=?, layout=? WHERE username=?", 
+              (json.dumps(favs), json.dumps(wls), json.dumps(layout), username))
+    conn.commit()
+    conn.close()
+
+def delete_user(username):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM users WHERE username=?", (username,))
+    c.execute("DELETE FROM user_prefs WHERE username=?", (username,))
+    conn.commit()
+    conn.close()
+
+def get_all_users():
+    conn = sqlite3.connect(DB_FILE)
+    df = pd.read_sql_query("SELECT username, created_at FROM users", conn)
+    conn.close()
+    return df
+
+init_db()
+
+# --- AUTHENTICATION GATE ---
+if 'logged_in' not in st.session_state: st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns([1, 1.2, 1])
+    with c2:
+        st.markdown("<div class='auth-box'>", unsafe_allow_html=True)
+        st.title("🌍 Karma Analytics Terminal")
+        st.caption("Sign in to access your macro workspaces and watchlists.")
+        
+        tab_login, tab_signup = st.tabs(["Sign In", "Create Account"])
+        
+        with tab_login:
+            log_user = st.text_input("Username", key="log_u").strip()
+            log_pw = st.text_input("Password", type="password", key="log_p")
+            if st.button("Access Terminal", use_container_width=True):
+                if authenticate_user(log_user, log_pw):
+                    st.session_state.logged_in = True
+                    st.session_state.username = log_user
+                    st.session_state.is_admin = (log_user.lower() == "admin")
+                    # Load preferences
+                    favs, wls, layout = load_user_prefs(log_user)
+                    st.session_state.fav_ratios = [tuple(x) for x in favs]
+                    st.session_state.watchlists = wls
+                    st.session_state.show_ticker = layout.get("ticker", True)
+                    st.session_state.show_fav = layout.get("fav", True)
+                    st.session_state.show_news = layout.get("news", True)
+                    st.rerun()
+                else:
+                    st.error("Invalid credentials.")
+                    
+        with tab_signup:
+            sign_user = st.text_input("Choose Username", key="sign_u").strip()
+            sign_pw = st.text_input("Choose Password", type="password", key="sign_p")
+            if st.button("Create Account", use_container_width=True):
+                if len(sign_user) < 3: st.error("Username too short.")
+                elif len(sign_pw) < 4: st.error("Password too weak.")
+                else:
+                    if create_user(sign_user, sign_pw):
+                        st.success("Account created! Please sign in.")
+                    else:
+                        st.error("Username already exists.")
+        st.markdown("</div>", unsafe_allow_html=True)
+    st.stop() # Halts script execution until logged in
+
+
+# --- TERMINAL EXECUTION (ONLY REACHED IF LOGGED IN) ---
 
 # --- CURRENCY MAPPING ---
 CURRENCY_MAP = {
@@ -83,7 +183,7 @@ CURRENCY_MAP = {
     "FTSE 100": "£", "DAX": "€", "STOXX 50": "€", "Nikkei 225": "¥", "ASX 200": "A$"
 }
 
-# --- STATE MANAGEMENT ---
+# --- STATE MANAGEMENT (SESSION DEFAULTS) ---
 DEFAULT_ASSETS = {
     "S&P 500": "^GSPC", "Nasdaq 100": "^NDX", "Dow Jones": "^DJI", "Russell 2000": "^RUT", "VIX": "^VIX",
     "Broad Market 500 (IND)": "BSE-500.BO", "Nifty 50": "^NSEI", 
@@ -93,84 +193,85 @@ DEFAULT_ASSETS = {
     "US 20+ Yr Treasury": "TLT", "US Tech ETF": "XLK", "US Fin ETF": "XLF", "US Healthcare ETF": "XLV", "US Energy ETF": "XLE", "Emerging Markets": "EEM",
     "FTSE 100": "^FTSE", "DAX": "^GDAXI", "STOXX 50": "^STOXX50E", "Nikkei 225": "^N225", "ASX 200": "^AXJO"
 }
-DEFAULT_WATCHLISTS = {"⭐ Global Macro": {"S&P 500": "^GSPC", "DAX": "^GDAXI", "Nikkei 225": "^N225", "Gold (Spot)": "GC=F"}}
-
 if 'asset_dict' not in st.session_state: st.session_state.asset_dict = DEFAULT_ASSETS.copy()
-if 'watchlists' not in st.session_state: st.session_state.watchlists = DEFAULT_WATCHLISTS.copy()
-if 'active_wl' not in st.session_state: st.session_state.active_wl = "⭐ Global Macro"
+if 'active_wl' not in st.session_state: st.session_state.active_wl = list(st.session_state.watchlists.keys())[0] if st.session_state.watchlists else None
 if 'target_num' not in st.session_state: st.session_state.target_num = "S&P 500"
 if 'target_den' not in st.session_state: st.session_state.target_den = "None"
 if 'target_period' not in st.session_state: st.session_state.target_period = "1y"
-if 'fav_ratios' not in st.session_state: st.session_state.fav_ratios = [("Gold (Spot)", "S&P 500"), ("Nasdaq 100", "Russell 2000")]
 if 'recent_ratios' not in st.session_state: st.session_state.recent_ratios = []
-
-# Dynamic Layout States
-if 'show_ticker' not in st.session_state: st.session_state.show_ticker = True
-if 'show_fav' not in st.session_state: st.session_state.show_fav = True
-if 'show_news' not in st.session_state: st.session_state.show_news = True
-
-# Tab Navigation State
 if 'active_tab' not in st.session_state: st.session_state.active_tab = "🖥️ Macro Overview"
 
+# Helper to trigger DB save on state change
+def sync_db():
+    layout = {"ticker": st.session_state.show_ticker, "fav": st.session_state.show_fav, "news": st.session_state.show_news}
+    save_user_prefs(st.session_state.username, st.session_state.fav_ratios, st.session_state.watchlists, layout)
+
+# --- HEADER ---
+c_title, c_export = st.columns([8, 2])
+with c_title: 
+    st.title("🌍 Ratio Charts Conviction Builder")
+    st.markdown("<p style='color:#787b86; font-size:0.85rem; margin-top:-15px; margin-bottom:15px;'>Powered by Karma Analytics and Advisory Ltd.</p>", unsafe_allow_html=True)
+with c_export:
+    st.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
+    with st.popover(f"👤 {st.session_state.username.upper()}", use_container_width=True):
+        if st.button("🚪 Logout", use_container_width=True):
+            st.session_state.clear()
+            st.rerun()
+        if st.button("🗑️ Delete Account", use_container_width=True):
+            delete_user(st.session_state.username)
+            st.session_state.clear()
+            st.rerun()
 
 # --- UNIVERSAL OMNIBOX RESOLVER ---
 def resolve_symbol(query):
     query = query.strip()
     if not query or query.upper() == "NONE": return "None"
-    
     q_upper = query.upper()
-    
-    # 1. Search existing local dictionary
     for name, tkr in st.session_state.asset_dict.items():
-        if q_upper == name.upper() or q_upper == tkr.upper():
-            return name
-            
-    # 2. Hardcoded aliases for common conversational inputs
-    aliases = {
-        "SOLANA": "SOL-USD", "USVIX": "^VIX", "VIX": "^VIX", 
-        "SPY": "SPY", "QQQ": "QQQ", "DXY": "DX-Y.NYB", 
-        "SPX": "^GSPC", "NDX": "^NDX", "RUT": "^RUT"
-    }
+        if q_upper == name.upper() or q_upper == tkr.upper(): return name
+    aliases = { "SOLANA": "SOL-USD", "USVIX": "^VIX", "VIX": "^VIX", "SPY": "SPY", "QQQ": "QQQ", "DXY": "DX-Y.NYB", "SPX": "^GSPC", "NDX": "^NDX", "RUT": "^RUT" }
     if q_upper in aliases:
         test_sym = aliases[q_upper]
         try:
-            td = yf.download(test_sym, period="1d", progress=False)
-            if td is not None and not td.empty:
+            if not yf.download(test_sym, period="1d", progress=False).empty:
                 st.session_state.asset_dict[test_sym] = test_sym
                 return test_sym
         except: pass
-
-    # 3. Direct Yahoo Download Test (If they typed a valid ticker directly)
     with st.spinner(f"Verifying '{q_upper}'..."):
         try:
-            td = yf.download(q_upper, period="1d", progress=False)
-            if td is not None and not td.empty:
+            if not yf.download(q_upper, period="1d", progress=False).empty:
                 st.session_state.asset_dict[q_upper] = q_upper
                 return q_upper
         except: pass
-
-    # 4. Fuzzy Search via Yahoo API (Catches things like "Apple" -> "AAPL")
     with st.spinner(f"Searching global exchanges for '{query}'..."):
         try:
             url = f"https://query2.finance.yahoo.com/v1/finance/search?q={query}"
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-            res = requests.get(url, headers=headers, timeout=5)
-            data = res.json()
+            data = requests.get(url, headers=headers, timeout=5).json()
             if 'quotes' in data and len(data['quotes']) > 0:
                 for quote in data['quotes']:
                     sym = quote.get('symbol')
-                    if sym:
-                        td = yf.download(sym, period="1d", progress=False)
-                        if td is not None and not td.empty:
-                            st.session_state.asset_dict[sym] = sym
-                            return sym
-        except Exception:
-            pass
-            
+                    if sym and not yf.download(sym, period="1d", progress=False).empty:
+                        st.session_state.asset_dict[sym] = sym
+                        return sym
+        except: pass
     return None
 
 # --- SIDEBAR CONTROLS ---
 st.sidebar.title("⚙️ Terminal Setup")
+
+# ADMIN PANEL
+if st.session_state.get('is_admin', False):
+    with st.sidebar.expander("👑 Admin Panel", expanded=False):
+        st.caption("Backend User Telemetry")
+        users_df = get_all_users()
+        st.dataframe(users_df, hide_index=True, use_container_width=True)
+        del_target = st.selectbox("Delete User", [""] + users_df['username'].tolist())
+        if st.button("Delete Selected Account") and del_target:
+            if del_target != "admin":
+                delete_user(del_target)
+                st.success(f"{del_target} deleted.")
+                st.rerun()
 
 st.sidebar.markdown("**💻 Command Line**")
 with st.sidebar.form(key="omni_form", clear_on_submit=True):
@@ -184,7 +285,6 @@ if omni_submit and omni_cmd:
         tf = st.session_state.target_period
         num_query = parts[0].strip()
         den_query = "None"
-        
         if len(parts) == 2:
             den_part_split = parts[1].strip().rsplit(' ', 1)
             den_query = den_part_split[0]
@@ -198,33 +298,25 @@ if omni_submit and omni_cmd:
                 tf_cand = num_part_split[1].lower()
                 if tf_cand in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: tf = tf_cand
         
-        # SMART ROUTING
         res_num = resolve_symbol(num_query)
         res_den = resolve_symbol(den_query)
-        
         if res_num:
             st.session_state.target_num = res_num
             st.session_state.target_den = res_den if res_den else "None"
             st.session_state.target_period = tf
             st.session_state.active_tab = "🔍 Dynamic Explorer"
             st.rerun()
-        else:
-            st.toast(f"Could not locate data for '{num_query}' on global exchanges.", icon="⚠️")
-    except Exception as e:
-        st.toast("Command error. Use format: Asset1 / Asset2 timeframe", icon="⚠️")
+        else: st.toast(f"Could not locate '{num_query}'.", icon="⚠️")
+    except: st.toast("Command error.", icon="⚠️")
 
 with st.sidebar.expander("🧩 Layout Manager", expanded=False):
     st.caption("Toggle sections to free up screen real estate.")
-    st.session_state.show_ticker = st.checkbox("Show Top Ticker Tape", value=st.session_state.show_ticker)
-    st.session_state.show_fav = st.checkbox("Show Favorites (Left Panel)", value=st.session_state.show_fav)
-    st.session_state.show_news = st.checkbox("Show Watchlist/News (Right Panel)", value=st.session_state.show_news)
-
-with st.sidebar.expander("🧹 Data & History Management", expanded=False):
-    del_timeframe = st.selectbox("Select History to Delete", ["Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time History"])
-    if st.button("🗑️ Reset & Clear Cache", use_container_width=True):
-        st.cache_data.clear()
-        st.toast("Cache cleared.", icon="✅")
-        time.sleep(0.5)
+    t_tick = st.checkbox("Show Top Ticker Tape", value=st.session_state.show_ticker)
+    t_fav = st.checkbox("Show Favorites (Left Panel)", value=st.session_state.show_fav)
+    t_news = st.checkbox("Show Watchlist/News (Right Panel)", value=st.session_state.show_news)
+    if t_tick != st.session_state.show_ticker or t_fav != st.session_state.show_fav or t_news != st.session_state.show_news:
+        st.session_state.show_ticker, st.session_state.show_fav, st.session_state.show_news = t_tick, t_fav, t_news
+        sync_db()
         st.rerun()
 
 st.sidebar.markdown("---")
@@ -261,12 +353,12 @@ with st.sidebar.expander("⏱️ Time & Style", expanded=True):
     with c2: interval_selection = st.selectbox("Interval", ("1d", "1wk", "1mo"))
     chart_type = st.selectbox("Style", ("Candlestick", "Bar (OHLC)", "Line"))
 
-with st.sidebar.expander("🎨 Drawing Toolbox (Dynamic Chart)", expanded=True):
+with st.sidebar.expander("🎨 Drawing Toolbox", expanded=True):
     c_color, c_width = st.columns([1, 2])
     with c_color: st.session_state.draw_color = st.color_picker("Color", st.session_state.get("draw_color", "#2962FF"))
     with c_width: st.session_state.draw_width = st.slider("Thickness", 1, 5, st.session_state.get("draw_width", 2))
 
-with st.sidebar.expander("📈 Technicals & Overlays", expanded=True):
+with st.sidebar.expander("📈 Technicals", expanded=True):
     show_volume = st.checkbox("Show Volume Bar", value=True)
     selected_overlays = st.multiselect("Overlays", ["21 EMA", "50 SMA", "200 EMA", "AVWAP"], default=["50 SMA"])
     selected_oscillators = st.multiselect("Oscillators", ["Volume", "RSI (14)", "MACD (12, 26, 9)", "Drawdown %"], default=["Volume"])
@@ -370,7 +462,7 @@ def generate_ai_overview(num, den, period_str, interval_str):
         df['Ratio_Close'] = df['Close_num'] / df['Close_den']
 
     series = df['Ratio_Close'].dropna()
-    if len(series) < 20: return "Insufficient historical data points to generate quantitative moving averages or momentum indicators."
+    if len(series) < 20: return "Insufficient historical data."
 
     current = series.iloc[-1]
     sma50 = series.rolling(50).mean().iloc[-1] if len(series) >= 50 else None
@@ -390,21 +482,17 @@ def generate_ai_overview(num, den, period_str, interval_str):
         trend = "bullish" if current > sma200 else "bearish"
         overview += f"The ratio is currently in a <b>{trend} macro regime</b>, trading {'above' if current > sma200 else 'below'} its 200-period moving average. "
     else:
-        overview += "The asset's long-term trend is still forming (insufficient data for 200-period analysis). "
+        overview += "The asset's long-term trend is still forming. "
 
     if sma50 and not np.isnan(sma50):
-        overview += f"Short-term momentum is {'positive' if current > sma50 else 'negative'}, with prices holding {'above' if current > sma50 else 'below'} the critical 50-period moving average. "
+        overview += f"Short-term momentum is {'positive' if current > sma50 else 'negative'}, holding {'above' if current > sma50 else 'below'} the 50-period average. "
 
-    overview += f"<br><br><b>2. Momentum & Mean Reversion (RSI):</b><br>"
-    overview += f"The 14-period Relative Strength Index (RSI) is reading <b>{rsi:.2f}</b>. "
-    if rsi >= 70:
-        overview += "This indicates the ratio is heavily <b>overbought</b>, suggesting a potential near-term pullback, consolidation, or mean-reversion event."
-    elif rsi <= 30:
-        overview += "This indicates the ratio is heavily <b>oversold</b>, suggesting capitulation and a potential near-term bounce or reversal."
-    elif 50 <= rsi < 70:
-        overview += "Momentum is constructive and in bullish territory, but has not yet reached extreme overbought levels."
-    else:
-        overview += "Momentum is leaning bearish, reflecting distribution, but has not yet reached extreme oversold capitulation levels."
+    overview += f"<br><br><b>2. Momentum (RSI):</b><br>"
+    overview += f"The 14-period RSI is reading <b>{rsi:.2f}</b>. "
+    if rsi >= 70: overview += "This indicates the ratio is heavily <b>overbought</b>, suggesting a potential mean-reversion event."
+    elif rsi <= 30: overview += "This indicates the ratio is heavily <b>oversold</b>, suggesting capitulation and a potential bounce."
+    elif 50 <= rsi < 70: overview += "Momentum is constructive and in bullish territory."
+    else: overview += "Momentum is leaning bearish, reflecting distribution."
 
     overview += f"<br><br><b>3. Relative Performance:</b><br>"
     overview += f"Over the last ~{lookback} periods, {asset_name} has shifted by <b>{roc_1m:+.2f}%</b>, actively {rel_str} over the medium term.</div>"
@@ -1007,6 +1095,7 @@ if st.session_state.active_tab == "🖥️ Macro Overview":
                         st.rerun()
                     if c2.button("❌", key=f"fav_del_{idx}", use_container_width=True):
                         st.session_state.fav_ratios.remove((num, den))
+                        sync_db()
                         st.rerun()
 
     with col_main:
@@ -1088,7 +1177,7 @@ if st.session_state.active_tab == "🖥️ Macro Overview":
         with col_news:
             st.subheader("📋 Watchlists")
             with st.container(border=True):
-                active_wl = st.selectbox("Select", list(st.session_state.watchlists.keys()), index=list(st.session_state.watchlists.keys()).index(st.session_state.active_wl), label_visibility="collapsed", key="wl_sel")
+                active_wl = st.selectbox("Select", list(st.session_state.watchlists.keys()), index=list(st.session_state.watchlists.keys()).index(st.session_state.active_wl) if st.session_state.active_wl in st.session_state.watchlists else 0, label_visibility="collapsed", key="wl_sel")
                 st.session_state.active_wl = active_wl
                 
                 wl_data = fetch_bulk_watchlist(st.session_state.watchlists[active_wl])
@@ -1107,6 +1196,7 @@ if st.session_state.active_tab == "🖥️ Macro Overview":
             st.subheader("📰 Sentiment Feed")
             with st.container(border=True, height=350):
                 news = fetch_market_news(st.session_state.target_num)
+                if not news: st.caption("No recent news found.")
                 for item in news:
                     st.markdown(f"{item['tag']} **[{item['title']}]({item['link']})**")
                     st.caption(f"🕒 {item.get('published', 'Recent').replace('+0000', '').strip()}")
@@ -1125,7 +1215,7 @@ elif st.session_state.active_tab == "🔍 Dynamic Explorer":
         st.session_state.recent_ratios = st.session_state.recent_ratios[:6]
         
         if st.session_state.target_num != "None":
-            tkr = st.session_state.asset_dict[st.session_state.target_num]
+            tkr = st.session_state.asset_dict.get(st.session_state.target_num, st.session_state.target_num)
             data = fetch_yahoo_data(tkr, "5d", "1d")
             curr = CURRENCY_MAP.get(st.session_state.target_num, "")
             if data is not None and not data.empty and len(data) >= 2:
@@ -1157,10 +1247,12 @@ elif st.session_state.active_tab == "🔍 Dynamic Explorer":
             if is_saved:
                 if st.button("❌ Unsave", use_container_width=True):
                     st.session_state.fav_ratios.remove(current_pair)
+                    sync_db()
                     st.rerun()
             else:
                 if st.button("⭐ Save Ratio", use_container_width=True):
                     st.session_state.fav_ratios.append(current_pair)
+                    sync_db()
                     st.rerun()
                 
         with c_clear:
@@ -1187,14 +1279,13 @@ elif st.session_state.active_tab == "🔍 Dynamic Explorer":
             with st.expander("📅 Historical Seasonality Matrix (Monthly % Returns)", expanded=False):
                 with st.spinner("Calculating Seasonality..."):
                     try:
-                        s_data = fetch_yahoo_data(st.session_state.asset_dict[st.session_state.target_num], "5y", "1d")
+                        s_data = fetch_yahoo_data(st.session_state.asset_dict.get(st.session_state.target_num, st.session_state.target_num), "5y", "1d")
                         if s_data is not None and not s_data.empty:
                             s_data['Year'] = s_data.index.year
                             s_data['Month'] = s_data.index.month
                             monthly_rtn = s_data.groupby(['Year', 'Month'])['Close'].apply(lambda x: (x.iloc[-1]/x.iloc[0] - 1)*100).unstack()
                             monthly_rtn.columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
                             
-                            # Plotly exclusively retained for the Heatmap visualization
                             fig_sea = go.Figure(data=go.Heatmap(
                                 z=monthly_rtn.values, x=monthly_rtn.columns, y=monthly_rtn.index,
                                 colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
@@ -1209,7 +1300,9 @@ elif st.session_state.active_tab == "🔍 Dynamic Explorer":
     with col_dyn_news:
         st.subheader("📋 Watchlists")
         with st.container(border=True):
-            active_wl = st.selectbox("Select", list(st.session_state.watchlists.keys()), index=list(st.session_state.watchlists.keys()).index(st.session_state.active_wl), label_visibility="collapsed", key="wl_sel_dyn")
+            wl_opts = list(st.session_state.watchlists.keys())
+            idx_wl = wl_opts.index(st.session_state.active_wl) if st.session_state.active_wl in wl_opts else 0
+            active_wl = st.selectbox("Select", wl_opts, index=idx_wl, label_visibility="collapsed", key="wl_sel_dyn")
             st.session_state.active_wl = active_wl
             
             wl_data = fetch_bulk_watchlist(st.session_state.watchlists[active_wl])
@@ -1222,12 +1315,12 @@ elif st.session_state.active_tab == "🔍 Dynamic Explorer":
                     selected_asset = df.iloc[event.selection.rows[0]]["Asset"]
                     st.session_state.target_num = selected_asset
                     st.session_state.target_den = "None"
-                    st.session_state.active_tab = "🔍 Dynamic Explorer"
                     st.rerun()
 
         st.subheader("📰 Sentiment Feed")
         with st.container(border=True, height=350):
             news = fetch_market_news(st.session_state.target_num)
+            if not news: st.caption("No recent news found.")
             for item in news:
                 st.markdown(f"{item['tag']} **[{item['title']}]({item['link']})**")
                 st.caption(f"🕒 {item.get('published', 'Recent').replace('+0000', '').strip()}")
@@ -1239,7 +1332,7 @@ elif st.session_state.active_tab == "🧮 Correlation Matrix":
     st.caption(f"Analyzing cross-asset correlations for list: **{st.session_state.active_wl}**")
     
     with st.spinner("Processing Matrix..."):
-        curr_wl = st.session_state.watchlists[st.session_state.active_wl]
+        curr_wl = st.session_state.watchlists.get(st.session_state.active_wl, {})
         if len(curr_wl) < 2:
             st.warning("Please add at least 2 assets to your active watchlist to calculate correlation.")
         else:
@@ -1285,4 +1378,4 @@ elif st.session_state.active_tab == "🧮 Correlation Matrix":
 # --- TELEMETRY ---
 st.markdown("---")
 latency = round(time.time() - start_time, 2)
-st.caption(f"🟢 **System:** Online | ⏱️ **Latency:** {latency}s | 📡 **Engines:** YF API + TV WebGL Canvas | 🕒 **Sync:** {pd.Timestamp.now().strftime('%H:%M:%S UTC')} | 📦 **Assets:** {len(st.session_state.asset_dict)}")
+st.caption(f"🟢 **System:** Online | ⏱️ **Latency:** {latency}s | 📡 **Engines:** YF API + TV WebGL Canvas | 👤 **User:** {st.session_state.username}")
