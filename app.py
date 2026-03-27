@@ -8,14 +8,15 @@ import feedparser
 import json
 import sqlite3
 import hashlib
+import requests
 from datetime import datetime
 import streamlit.components.v1 as components
 
-# --- PAGE CONFIGURATION ---
+# --- PAGE CONFIGURATION & TIMER START ---
 st.set_page_config(page_title="Ratio Charts Conviction Builder", layout="wide", initial_sidebar_state="expanded")
 start_time = time.time()
 
-# --- PREMIUM CSS ---
+# --- PREMIUM TRADINGVIEW LIGHT-THEME CSS ---
 st.markdown("""
 <style>
     .stApp { background-color: #f8f9fd; color: #131722; font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif; }
@@ -44,6 +45,8 @@ st.markdown("""
     .stButton > button:hover { border: 1px solid #2962FF; color: #2962FF; background-color: #f0f3fa;}
     .tear-sheet { font-size: 0.85rem; color: #787b86; display: flex; gap: 15px; margin-top: -10px; margin-bottom: 15px; padding: 10px; background: #f8f9fd; border-radius: 6px; border: 1px solid #e0e3eb;}
     .tear-val { font-weight: 700; color: #131722; }
+    .share-btn { display: inline-block; padding: 8px 12px; margin-bottom: 8px; border-radius: 4px; background: #ffffff; border: 1px solid #e0e3eb; color: #131722; text-decoration: none; font-size: 0.9rem; font-weight: 600; width: 100%; text-align: left; transition: 0.2s;}
+    .share-btn:hover { background: #f0f3fa; border-color: #2962FF; color: #2962FF;}
     .ai-box { background: #F8F9FA; border-left: 4px solid #2962FF; padding: 15px 20px; border-radius: 0px 8px 8px 0px; font-size: 0.95rem; color: #333; line-height: 1.6; margin-top: 15px; margin-bottom: 20px;}
     .ai-title { font-weight: 700; color: #131722; margin-bottom: 8px; font-size: 1.05rem; }
     .auth-box { max-width: 400px; margin: 0 auto; padding: 30px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #e0e3eb; }
@@ -69,7 +72,6 @@ def create_user(username, password):
     c = conn.cursor()
     try:
         c.execute("INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)", (username, hash_pw(password), datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        # Insert default preferences
         default_favs = json.dumps([["Gold (Spot)", "S&P 500"], ["Nasdaq 100", "Russell 2000"]])
         default_wls = json.dumps({"⭐ Global Macro": {"S&P 500": "^GSPC", "DAX": "^GDAXI", "Nikkei 225": "^N225", "Gold (Spot)": "GC=F"}})
         default_layout = json.dumps({"ticker": True, "fav": True, "news": True})
@@ -125,6 +127,18 @@ def get_all_users():
 
 init_db()
 
+# --- STATE MANAGEMENT DEFAULTS ---
+DEFAULT_ASSETS = {
+    "S&P 500": "^GSPC", "Nasdaq 100": "^NDX", "Dow Jones": "^DJI", "Russell 2000": "^RUT", "VIX": "^VIX",
+    "Broad Market 500 (IND)": "BSE-500.BO", "Nifty 50": "^NSEI", 
+    "Nifty Bank": "^NSEBANK", "Nifty IT": "^CNXIT", "Nifty Auto": "^CNXAUTO", "Nifty Pharma": "^CNXPHARMA", 
+    "Nifty Metal": "^CNXMETAL", "Nifty Energy": "^CNXENERGY", "Nifty FMCG": "^CNXFMCG", "Nifty Realty": "^CNXREALTY", "Nifty PSU Bank": "^CNXPSUBANK",
+    "Gold (Spot)": "GC=F", "Silver": "SI=F", "Crude Oil": "CL=F", "Bitcoin": "BTC-USD", "Ethereum": "ETH-USD",
+    "US 20+ Yr Treasury": "TLT", "US Tech ETF": "XLK", "US Fin ETF": "XLF", "US Healthcare ETF": "XLV", "US Energy ETF": "XLE", "Emerging Markets": "EEM",
+    "FTSE 100": "^FTSE", "DAX": "^GDAXI", "STOXX 50": "^STOXX50E", "Nikkei 225": "^N225", "ASX 200": "^AXJO"
+}
+DEFAULT_WATCHLISTS = {"⭐ Global Macro": {"S&P 500": "^GSPC", "DAX": "^GDAXI", "Nikkei 225": "^N225", "Gold (Spot)": "GC=F"}}
+
 # --- AUTHENTICATION GATE ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 
@@ -136,7 +150,7 @@ if not st.session_state.logged_in:
         st.title("🌍 Karma Analytics Terminal")
         st.caption("Sign in to access your macro workspaces and watchlists.")
         
-        tab_login, tab_signup = st.tabs(["Sign In", "Create Account"])
+        tab_login, tab_signup, tab_admin = st.tabs(["Sign In", "Create Account", "Admin Access"])
         
         with tab_login:
             log_user = st.text_input("Username", key="log_u").strip()
@@ -146,7 +160,7 @@ if not st.session_state.logged_in:
                     st.session_state.logged_in = True
                     st.session_state.username = log_user
                     st.session_state.is_admin = (log_user.lower() == "admin")
-                    # Load preferences
+                    # Load DB preferences
                     favs, wls, layout = load_user_prefs(log_user)
                     st.session_state.fav_ratios = [tuple(x) for x in favs]
                     st.session_state.watchlists = wls
@@ -168,31 +182,37 @@ if not st.session_state.logged_in:
                         st.success("Account created! Please sign in.")
                     else:
                         st.error("Username already exists.")
+                        
+        with tab_admin:
+            st.markdown("#### System Administrator Bypass")
+            admin_pw = st.text_input("Master Passcode", type="password", key="admin_override_pw")
+            if st.button("Enter Admin Mode", use_container_width=True):
+                if admin_pw == "admin123": # <--- Change your master passcode here
+                    st.session_state.logged_in = True
+                    st.session_state.username = "Administrator" # Ghost session
+                    st.session_state.is_admin = True
+                    # Load default preferences to prevent crashes in the ghost session
+                    st.session_state.fav_ratios = [("Gold (Spot)", "S&P 500"), ("Nasdaq 100", "Russell 2000")]
+                    st.session_state.watchlists = DEFAULT_WATCHLISTS.copy()
+                    st.session_state.show_ticker = True
+                    st.session_state.show_fav = True
+                    st.session_state.show_news = True
+                    st.rerun()
+                else:
+                    st.error("Invalid System Passcode.")
+                    
         st.markdown("</div>", unsafe_allow_html=True)
     st.stop() # Halts script execution until logged in
 
 
 # --- TERMINAL EXECUTION (ONLY REACHED IF LOGGED IN) ---
 
-# --- CURRENCY MAPPING ---
-CURRENCY_MAP = {
-    "S&P 500": "$", "Nasdaq 100": "$", "Dow Jones": "$", "Russell 2000": "$", "VIX": "",
-    "Broad Market 500 (IND)": "₹", "Nifty 50": "₹", "Nifty Bank": "₹", "Nifty IT": "₹", "Nifty Auto": "₹", "Nifty Pharma": "₹", "Nifty Metal": "₹", "Nifty Energy": "₹", "Nifty FMCG": "₹", "Nifty Realty": "₹", "Nifty PSU Bank": "₹",
-    "Gold (Spot)": "$", "Silver": "$", "Crude Oil": "$", "Bitcoin": "$", "Ethereum": "$",
-    "US 20+ Yr Treasury": "$", "US Tech ETF": "$", "US Fin ETF": "$", "US Healthcare ETF": "$", "US Energy ETF": "$", "Emerging Markets": "$",
-    "FTSE 100": "£", "DAX": "€", "STOXX 50": "€", "Nikkei 225": "¥", "ASX 200": "A$"
-}
+# Helper to trigger DB save on state change safely
+def sync_db():
+    if st.session_state.get("username") == "Administrator": return # Protects the ghost admin session
+    layout = {"ticker": st.session_state.show_ticker, "fav": st.session_state.show_fav, "news": st.session_state.show_news}
+    save_user_prefs(st.session_state.username, st.session_state.fav_ratios, st.session_state.watchlists, layout)
 
-# --- STATE MANAGEMENT (SESSION DEFAULTS) ---
-DEFAULT_ASSETS = {
-    "S&P 500": "^GSPC", "Nasdaq 100": "^NDX", "Dow Jones": "^DJI", "Russell 2000": "^RUT", "VIX": "^VIX",
-    "Broad Market 500 (IND)": "BSE-500.BO", "Nifty 50": "^NSEI", 
-    "Nifty Bank": "^NSEBANK", "Nifty IT": "^CNXIT", "Nifty Auto": "^CNXAUTO", "Nifty Pharma": "^CNXPHARMA", 
-    "Nifty Metal": "^CNXMETAL", "Nifty Energy": "^CNXENERGY", "Nifty FMCG": "^CNXFMCG", "Nifty Realty": "^CNXREALTY", "Nifty PSU Bank": "^CNXPSUBANK",
-    "Gold (Spot)": "GC=F", "Silver": "SI=F", "Crude Oil": "CL=F", "Bitcoin": "BTC-USD", "Ethereum": "ETH-USD",
-    "US 20+ Yr Treasury": "TLT", "US Tech ETF": "XLK", "US Fin ETF": "XLF", "US Healthcare ETF": "XLV", "US Energy ETF": "XLE", "Emerging Markets": "EEM",
-    "FTSE 100": "^FTSE", "DAX": "^GDAXI", "STOXX 50": "^STOXX50E", "Nikkei 225": "^N225", "ASX 200": "^AXJO"
-}
 if 'asset_dict' not in st.session_state: st.session_state.asset_dict = DEFAULT_ASSETS.copy()
 if 'active_wl' not in st.session_state: st.session_state.active_wl = list(st.session_state.watchlists.keys())[0] if st.session_state.watchlists else None
 if 'target_num' not in st.session_state: st.session_state.target_num = "S&P 500"
@@ -200,11 +220,6 @@ if 'target_den' not in st.session_state: st.session_state.target_den = "None"
 if 'target_period' not in st.session_state: st.session_state.target_period = "1y"
 if 'recent_ratios' not in st.session_state: st.session_state.recent_ratios = []
 if 'active_tab' not in st.session_state: st.session_state.active_tab = "🖥️ Macro Overview"
-
-# Helper to trigger DB save on state change
-def sync_db():
-    layout = {"ticker": st.session_state.show_ticker, "fav": st.session_state.show_fav, "news": st.session_state.show_news}
-    save_user_prefs(st.session_state.username, st.session_state.fav_ratios, st.session_state.watchlists, layout)
 
 # --- HEADER ---
 c_title, c_export = st.columns([8, 2])
@@ -218,7 +233,7 @@ with c_export:
             st.session_state.clear()
             st.rerun()
         if st.button("🗑️ Delete Account", use_container_width=True):
-            delete_user(st.session_state.username)
+            if st.session_state.username != "Administrator": delete_user(st.session_state.username)
             st.session_state.clear()
             st.rerun()
 
@@ -268,7 +283,7 @@ if st.session_state.get('is_admin', False):
         st.dataframe(users_df, hide_index=True, use_container_width=True)
         del_target = st.selectbox("Delete User", [""] + users_df['username'].tolist())
         if st.button("Delete Selected Account") and del_target:
-            if del_target != "admin":
+            if del_target != "admin" and del_target != "Administrator":
                 delete_user(del_target)
                 st.success(f"{del_target} deleted.")
                 st.rerun()
@@ -1315,6 +1330,7 @@ elif st.session_state.active_tab == "🔍 Dynamic Explorer":
                     selected_asset = df.iloc[event.selection.rows[0]]["Asset"]
                     st.session_state.target_num = selected_asset
                     st.session_state.target_den = "None"
+                    st.session_state.active_tab = "🔍 Dynamic Explorer"
                     st.rerun()
 
         st.subheader("📰 Sentiment Feed")
