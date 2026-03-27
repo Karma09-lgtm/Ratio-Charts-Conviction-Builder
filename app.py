@@ -43,6 +43,7 @@ st.markdown("""
     
     .stButton > button { border: 1px solid #e0e3eb; background-color: #ffffff; color: #787b86; transition: 0.2s; width: 100%; border-radius: 6px; padding: 4px 8px; font-weight: 500;}
     .stButton > button:hover { border: 1px solid #2962FF; color: #2962FF; background-color: #f0f3fa;}
+    .stButton > button:disabled { border: 1px solid #e0e3eb; background-color: #f8f9fd; color: #089981; font-weight: 600; opacity: 1; }
     
     .tear-sheet { font-size: 0.85rem; color: #787b86; display: flex; gap: 15px; margin-top: -10px; margin-bottom: 15px; padding: 10px; background: #f8f9fd; border-radius: 6px; border: 1px solid #e0e3eb;}
     .tear-val { font-weight: 700; color: #131722; }
@@ -51,18 +52,16 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- HEADER WITH SHARE/EXPORT MENU ---
+# --- HEADER ---
 c_title, c_export = st.columns([8, 2])
-with c_title:
-    st.title("🌍 Ratio Charts Conviction Builder")
+with c_title: st.title("🌍 Ratio Charts Conviction Builder")
 with c_export:
     st.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
     with st.popover("📤 Share & Export", use_container_width=True):
         st.markdown("**Share Terminal Setup**")
-        st.markdown("<a href='https://twitter.com/intent/tweet?text=Analyzing+global+macro+correlations+on+the+Ratio+Charts+Conviction+Builder!&hashtags=Macro,Trading' target='_blank' class='share-btn'>𝕏 &nbsp; Share on X</a>", unsafe_allow_html=True)
-        st.markdown("<a href='mailto:?subject=Macro Terminal Analysis&body=Check out this advanced macro conviction dashboard setup.' target='_blank' class='share-btn'>✉️ &nbsp; Email Colleague</a>", unsafe_allow_html=True)
+        st.markdown("<a href='#' class='share-btn'>𝕏 &nbsp; Share on X</a>", unsafe_allow_html=True)
 
-# --- CURRENCY MAPPING ENGINE ---
+# --- CURRENCY MAPPING ---
 CURRENCY_MAP = {
     "S&P 500": "$", "Nasdaq 100": "$", "Dow Jones": "$", "Russell 2000": "$", "VIX": "",
     "Broad Market 500 (IND)": "₹", "Nifty 50": "₹", "Nifty Bank": "₹", "Nifty IT": "₹", "Nifty Auto": "₹", "Nifty Pharma": "₹", "Nifty Metal": "₹", "Nifty Energy": "₹", "Nifty FMCG": "₹", "Nifty Realty": "₹", "Nifty PSU Bank": "₹",
@@ -71,7 +70,7 @@ CURRENCY_MAP = {
     "FTSE 100": "£", "DAX": "€", "STOXX 50": "€", "Nikkei 225": "¥", "ASX 200": "A$"
 }
 
-# --- BULLETPROOF STATE MANAGEMENT ---
+# --- STATE MANAGEMENT ---
 DEFAULT_ASSETS = {
     "S&P 500": "^GSPC", "Nasdaq 100": "^NDX", "Dow Jones": "^DJI", "Russell 2000": "^RUT", "VIX": "^VIX",
     "Broad Market 500 (IND)": "BSE-500.BO", "Nifty 50": "^NSEI", 
@@ -81,22 +80,10 @@ DEFAULT_ASSETS = {
     "US 20+ Yr Treasury": "TLT", "US Tech ETF": "XLK", "US Fin ETF": "XLF", "US Healthcare ETF": "XLV", "US Energy ETF": "XLE", "Emerging Markets": "EEM",
     "FTSE 100": "^FTSE", "DAX": "^GDAXI", "STOXX 50": "^STOXX50E", "Nikkei 225": "^N225", "ASX 200": "^AXJO"
 }
-
-DEFAULT_WATCHLISTS = {
-    "⭐ Global Macro": {"S&P 500": "^GSPC", "DAX": "^GDAXI", "Nikkei 225": "^N225", "Gold (Spot)": "GC=F"},
-    "🔥 Tech Watch": {"Nasdaq 100": "^NDX", "US Tech ETF": "XLK", "Nifty IT": "^CNXIT"}
-}
+DEFAULT_WATCHLISTS = {"⭐ Global Macro": {"S&P 500": "^GSPC", "DAX": "^GDAXI", "Nikkei 225": "^N225", "Gold (Spot)": "GC=F"}}
 
 if 'asset_dict' not in st.session_state: st.session_state.asset_dict = DEFAULT_ASSETS.copy()
-else:
-    for k, v in DEFAULT_ASSETS.items():
-        if k not in st.session_state.asset_dict: st.session_state.asset_dict[k] = v
-
 if 'watchlists' not in st.session_state: st.session_state.watchlists = DEFAULT_WATCHLISTS.copy()
-else:
-    for k, v in DEFAULT_WATCHLISTS.items():
-        if k not in st.session_state.watchlists: st.session_state.watchlists[k] = v
-
 if 'active_wl' not in st.session_state: st.session_state.active_wl = "⭐ Global Macro"
 if 'target_num' not in st.session_state: st.session_state.target_num = "S&P 500"
 if 'target_den' not in st.session_state: st.session_state.target_den = "None"
@@ -104,19 +91,14 @@ if 'target_period' not in st.session_state: st.session_state.target_period = "1y
 if 'fav_ratios' not in st.session_state: st.session_state.fav_ratios = [("Gold (Spot)", "S&P 500"), ("Nasdaq 100", "Russell 2000")]
 if 'recent_ratios' not in st.session_state: st.session_state.recent_ratios = []
 
-
-# --- SIDEBAR: OMNIBOX & CONTROLS ---
+# --- SIDEBAR CONTROLS ---
 st.sidebar.title("⚙️ Terminal Setup")
 
-# 1. THE OMNIBOX
 st.sidebar.markdown("**💻 Command Line**")
 with st.sidebar.form(key="omni_form", clear_on_submit=True):
     col_cmd, col_btn = st.columns([3, 1])
-    with col_cmd:
-        omni_cmd = st.text_input("Command", placeholder="e.g. Nifty / Gold 1y", label_visibility="collapsed")
-    with col_btn:
-        omni_submit = st.form_submit_button("Go ⚡", use_container_width=True)
-st.sidebar.caption("*Shortcut: Press **Enter** in the box to run.*")
+    with col_cmd: omni_cmd = st.text_input("Command", placeholder="e.g. Nifty / Gold 1y", label_visibility="collapsed")
+    with col_btn: omni_submit = st.form_submit_button("Go ⚡", use_container_width=True)
 
 if omni_submit and omni_cmd:
     parts = omni_cmd.split('/')
@@ -126,7 +108,6 @@ if omni_submit and omni_cmd:
             den_part = den_part_split[0]
             matched_num = next((k for k in st.session_state.asset_dict.keys() if num_part.lower() in k.lower()), None)
             matched_den = next((k for k in st.session_state.asset_dict.keys() if den_part.lower() in k.lower()), None)
-            
             if matched_num: st.session_state.target_num = matched_num
             if matched_den: st.session_state.target_den = matched_den
             if len(den_part_split) > 1:
@@ -143,23 +124,21 @@ if omni_submit and omni_cmd:
                 if tf in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: st.session_state.target_period = tf
         st.toast(f"Loaded: {st.session_state.target_num}", icon="🚀")
         st.rerun() 
-    except Exception: st.toast("Command error. Use format: Asset1 / Asset2 timeframe", icon="⚠️")
+    except Exception: st.toast("Command error.", icon="⚠️")
 
 with st.sidebar.expander("🧹 Data & History Management", expanded=False):
     st.caption("Wipe local cache and force fresh data pull.")
     del_timeframe = st.selectbox("Select History to Delete", ["Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time History"])
     if st.button("🗑️ Reset & Clear Cache", use_container_width=True):
         st.cache_data.clear()
-        st.toast(f"Successfully cleared {del_timeframe} of cached history.", icon="✅")
+        st.toast("Cache cleared.", icon="✅")
         time.sleep(0.5)
         st.rerun()
 
 st.sidebar.markdown("---")
 
-# --- ASSET SELECTION WITH INVERT BUTTON ---
 with st.sidebar.expander("⚙️ Asset Selection", expanded=True):
     asset_options = ["None"] + list(st.session_state.asset_dict.keys())
-    
     idx_num = asset_options.index(st.session_state.target_num) if st.session_state.target_num in asset_options else 1
     idx_den = asset_options.index(st.session_state.target_den) if st.session_state.target_den in asset_options else 0
 
@@ -167,12 +146,9 @@ with st.sidebar.expander("⚙️ Asset Selection", expanded=True):
     with col_assets:
         selected_num = st.selectbox("Numerator", asset_options, index=idx_num) 
         selected_den = st.selectbox("Denominator", asset_options, index=idx_den) 
-        
         if selected_num != st.session_state.target_num or selected_den != st.session_state.target_den:
-            st.session_state.target_num = selected_num
-            st.session_state.target_den = selected_den
+            st.session_state.target_num, st.session_state.target_den = selected_num, selected_den
             st.rerun()
-
     with col_inv:
         st.markdown("<div style='margin-top: 36px;'></div>", unsafe_allow_html=True)
         if st.button("🔄", help="Invert Ratio", use_container_width=True):
@@ -185,25 +161,27 @@ with st.sidebar.expander("⏱️ Time & Style", expanded=True):
     c1, c2 = st.columns(2)
     tf_options = ("1mo", "3mo", "6mo", "1y", "2y", "5y", "max")
     idx_tf = tf_options.index(st.session_state.target_period) if st.session_state.target_period in tf_options else 3
-    
     with c1: 
         timeframe = st.selectbox("Data Fetch", tf_options, index=idx_tf)
         if timeframe != st.session_state.target_period:
             st.session_state.target_period = timeframe
             st.rerun()
-            
     with c2: interval_selection = st.selectbox("Interval", ("1d", "1wk", "1mo"))
     chart_type = st.selectbox("Style", ("Candlestick", "Bar (OHLC)", "Line"))
+
+with st.sidebar.expander("🎨 Drawing Toolbox (Dynamic Chart)", expanded=True):
+    c_color, c_width = st.columns([1, 2])
+    with c_color: draw_color = st.color_picker("Color", "#2962FF")
+    with c_width: draw_width = st.slider("Thickness", 1, 5, 2)
 
 with st.sidebar.expander("📈 Technicals & Overlays", expanded=True):
     show_volume = st.checkbox("Show Volume Bar", value=True)
     selected_overlays = st.multiselect("Overlays", ["21 EMA", "50 SMA", "200 EMA", "AVWAP"], default=["50 SMA"])
     selected_oscillators = st.multiselect("Oscillators", ["Volume", "RSI (14)", "MACD (12, 26, 9)", "Drawdown %"], default=["Volume"])
 
-
-# --- HELPERS & DATA ENGINES ---
+# --- DATA ENGINES ---
 def format_large_number(num):
-    if np.isnan(num): return "0"
+    if pd.isna(num): return "0"
     if num >= 1e9: return f"{num/1e9:.2f}B"
     if num >= 1e6: return f"{num/1e6:.2f}M"
     if num >= 1e3: return f"{num/1e3:.2f}K"
@@ -219,12 +197,10 @@ def calculate_rsi(series, period=14):
 def fetch_fundamentals(ticker_symbol):
     if not ticker_symbol or ticker_symbol == "None": return None
     try:
-        tkr = yf.Ticker(ticker_symbol)
-        info = tkr.info
+        info = yf.Ticker(ticker_symbol).info
         if not info: return None
         return {
-            "52W High": info.get("fiftyTwoWeekHigh", "N/A"),
-            "52W Low": info.get("fiftyTwoWeekLow", "N/A"),
+            "52W High": info.get("fiftyTwoWeekHigh", "N/A"), "52W Low": info.get("fiftyTwoWeekLow", "N/A"),
             "Mkt Cap": format_large_number(info.get("marketCap", float('nan'))),
             "P/E (TTM)": round(info.get("trailingPE", float('nan')), 2) if info.get("trailingPE") else "N/A",
             "Div Yield": f"{info.get('dividendYield', 0)*100:.2f}%" if info.get('dividendYield') else "N/A"
@@ -237,8 +213,7 @@ def fetch_yahoo_data(ticker, period, interval):
         data = yf.download(ticker, period=period, interval=interval, progress=False)
         if data.empty: return None
         if isinstance(data.columns, pd.MultiIndex): data.columns = data.columns.get_level_values(0)
-        data = data.loc[:, ~data.columns.duplicated()]
-        return data
+        return data.loc[:, ~data.columns.duplicated()]
     except: return None
 
 @st.cache_data(ttl=300)
@@ -253,51 +228,43 @@ def fetch_bulk_watchlist(tickers_dict):
         else:
             if 'Close' in data.columns: data = data[['Close']].rename(columns={'Close': tkrs[0]})
             else: return pd.DataFrame()
-            
         results = []
         for name, tk in tickers_dict.items():
             if tk in data.columns:
                 col = data[tk].dropna()
                 if len(col) >= 2:
                     last, prev = col.iloc[-1], col.iloc[-2]
-                    chg = ((last - prev) / prev) * 100
-                    results.append({"Asset": name, "Price": round(last, 2), "Chg %": round(chg, 2)})
+                    results.append({"Asset": name, "Price": round(last, 2), "Chg %": round(((last - prev) / prev) * 100, 2)})
         return pd.DataFrame(results)
     except: return pd.DataFrame()
 
 @st.cache_data(ttl=600)
 def fetch_market_news(keyword="None"):
-    feed_urls = ["https://feeds.a.dj.com/rss/RSSMarketsMain.xml", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664"]
-    news_items, seen = [], set()
-    current_time = time.time()
-    base_keywords = ['rate', 'yield', 'treasury', 'inflation', 'cpi', 'fed', 'rbi', 'bank', 'earnings', 'geopolitic']
-    if keyword != "None": base_keywords.append(keyword.lower().split(" ")[0]) 
-    
-    for url in feed_urls:
+    urls = ["https://feeds.a.dj.com/rss/RSSMarketsMain.xml", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664"]
+    news, seen = [], set()
+    base_kws = ['rate', 'yield', 'treasury', 'inflation', 'fed', 'bank', 'earnings']
+    if keyword != "None": base_kws.append(keyword.lower().split(" ")[0]) 
+    for url in urls:
         try:
-            parsed = feedparser.parse(url)
-            for entry in parsed.entries[:25]:
-                if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                    if current_time - time.mktime(entry.published_parsed) > 86400: continue 
-                t_lower = entry.title.lower()
-                if entry.title not in seen and any(kw in t_lower for kw in base_keywords):
-                    pub_date = entry.get("published", entry.get("pubDate", "Recent"))
-                    tag = "⚪"
-                    news_items.append({"title": entry.title, "link": entry.link, "published": pub_date, "tag": tag})
+            for entry in feedparser.parse(url).entries[:25]:
+                t = entry.title.lower()
+                if entry.title not in seen and any(kw in t for kw in base_kws):
+                    tag = "🟢" if sum(1 for w in ['surge', 'jump', 'rise', 'gain'] if w in t) > sum(1 for w in ['plunge', 'drop', 'fall', 'cut'] if w in t) else "🔴"
+                    news.append({"title": entry.title, "link": entry.link, "published": entry.get("published", "Recent"), "tag": tag})
                     seen.add(entry.title)
         except: continue
-    return news_items[:15]
+    return news[:10]
 
 
-# --- UNIVERSAL TRADINGVIEW ENGINE (Powers Static & Dynamic Views) ---
-def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol, analysis_mode, show_hud=True, base_height=500):
+# --- UNIVERSAL TRADINGVIEW ENGINE ---
+def generate_tv_html(num_name, den_name, period_str, interval_str, c_type, overlays, oscillators, show_vol, analysis_mode, show_hud=True, base_height=500, enable_drawing=False):
     if num_name == "None" and den_name == "None": 
         return "<div style='padding:20px; text-align:center; color:#787b86; font-family:sans-serif;'>No assets selected.</div>", base_height
     
     num_data = fetch_yahoo_data(st.session_state.asset_dict.get(num_name), period_str, interval_str) if num_name != "None" else None
     den_data = fetch_yahoo_data(st.session_state.asset_dict.get(den_name), period_str, interval_str) if den_name != "None" else None
     if (num_data is None and den_name == "None") or (den_data is None and num_name == "None"): 
-        return "<div style='padding:20px; text-align:center; color:#f23645; font-family:sans-serif;'>Data unavailable for selected parameters.</div>", base_height
+        return "<div style='padding:20px; text-align:center; color:#f23645; font-family:sans-serif;'>Data unavailable.</div>", base_height
 
     base_df = num_data if num_data is not None else den_data
     if num_name == "None" or num_data is None:
@@ -308,7 +275,7 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
         if 'Volume' in base_df.columns: den_data['Volume'] = 1
 
     df = pd.merge(num_data, den_data, left_index=True, right_index=True, suffixes=('_num', '_den')).dropna()
-    if df.empty: return "<div style='padding:20px; text-align:center; color:#f23645; font-family:sans-serif;'>Data unavailable for selected timeframe.</div>", base_height
+    if df.empty: return "<div style='padding:20px; text-align:center; color:#f23645; font-family:sans-serif;'>Data unavailable.</div>", base_height
     
     df = df[~df.index.duplicated(keep='first')].sort_index()
     df = df.replace([np.inf, -np.inf], np.nan)
@@ -343,7 +310,6 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
             df['Peak'] = df['Ratio_Close'].cummax()
             df['Drawdown'] = ((df['Ratio_Close'] - df['Peak']) / df['Peak']) * 100
 
-    # Serialization (Drop NaNs selectively per component)
     if analysis_mode == "Correlation" or c_type == "Line":
         temp_main = df.dropna(subset=['Ratio_Close'])
         main_data = [{"time": d.strftime('%Y-%m-%d'), "value": float(row['Ratio_Close'])} for d, row in temp_main.iterrows()]
@@ -385,9 +351,163 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
             data = [{"time": d.strftime('%Y-%m-%d'), "value": float(v)} for d, v in temp_osc['Drawdown'].items()]
             osc_js += f"createSubchart('{div_id}', 'Drawdown %', 'area', {json.dumps(data)}, '#f23645');\n"
 
-    # WebGL payload with PINNED CDN VERSION for stability
     hud_display = "block" if show_hud else "none"
     title_text = f"{num_name}" + (f" / {den_name}" if den_name != "None" else "")
+
+    # Inject custom drawing layer if requested
+    drawing_html = ""
+    drawing_js = ""
+    if enable_drawing:
+        drawing_html = """
+        <div id="drawing-toolbar">
+            <button onclick="setTool('pan')" id="btn-pan" class="active">🖐️ Pan</button>
+            <button onclick="setTool('line')" id="btn-line">📏 Trendline</button>
+            <button onclick="setTool('text')" id="btn-text">🔤 Text</button>
+            <button onclick="setTool('eraser')" id="btn-eraser">🧽 Eraser</button>
+            <button onclick="clearDrawings()">🗑️ Clear</button>
+        </div>
+        <canvas id="drawing-layer"></canvas>
+        """
+        drawing_js = f"""
+        const canvas = document.getElementById('drawing-layer');
+        const ctx = canvas.getContext('2d');
+        let tool = 'pan';
+        let drawings = [];
+        let isDrawing = false;
+        let startPoint = null;
+        let currentMouse = null;
+        let dColor = '{draw_color}';
+        let dWidth = {draw_width};
+
+        function setTool(t) {{
+            tool = t;
+            document.querySelectorAll('#drawing-toolbar button').forEach(b => b.classList.remove('active'));
+            document.getElementById('btn-'+t).classList.add('active');
+            canvas.style.pointerEvents = (t === 'pan') ? 'none' : 'auto';
+        }}
+
+        function clearDrawings() {{ drawings = []; redrawCanvas(); }}
+
+        function getLogicalCoords(e) {{
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            return {{ 
+                logical: mainChart.timeScale().coordinateToLogical(x), 
+                price: mainSeries.coordinateToPrice(y) 
+            }};
+        }}
+
+        canvas.addEventListener('mousedown', e => {{
+            const pos = getLogicalCoords(e);
+            if (tool === 'line') {{
+                isDrawing = true;
+                startPoint = pos;
+            }} else if (tool === 'text') {{
+                const txt = prompt("Enter text annotation:");
+                if(txt) {{
+                    drawings.push({{type: 'text', p: pos, text: txt, color: dColor}});
+                    redrawCanvas();
+                }}
+                setTool('pan');
+            }} else if (tool === 'eraser') {{
+                const rect = canvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+                
+                // Simple distance checking to erase
+                drawings = drawings.filter(d => {{
+                    if(d.type === 'text') {{
+                        let px = mainChart.timeScale().logicalToCoordinate(d.p.logical);
+                        let py = mainSeries.priceToCoordinate(d.p.price);
+                        return Math.hypot(px-mx, py-my) > 20;
+                    }} else if(d.type === 'line') {{
+                        let x1 = mainChart.timeScale().logicalToCoordinate(d.p1.logical);
+                        let y1 = mainSeries.priceToCoordinate(d.p1.price);
+                        let x2 = mainChart.timeScale().logicalToCoordinate(d.p2.logical);
+                        let y2 = mainSeries.priceToCoordinate(d.p2.price);
+                        // Math to distance from point to line segment
+                        let l2 = (x1-x2)*(x1-x2) + (y1-y2)*(y1-y2);
+                        if (l2 == 0) return Math.hypot(x1-mx, y1-my) > 10;
+                        let t = Math.max(0, Math.min(1, ((mx - x1) * (x2 - x1) + (my - y1) * (y2 - y1)) / l2));
+                        let projX = x1 + t * (x2 - x1);
+                        let projY = y1 + t * (y2 - y1);
+                        return Math.hypot(mx - projX, my - projY) > 10;
+                    }}
+                    return true;
+                }});
+                redrawCanvas();
+            }}
+        }});
+
+        canvas.addEventListener('mousemove', e => {{
+            if(isDrawing && tool === 'line') {{
+                currentMouse = getLogicalCoords(e);
+            }}
+        }});
+
+        canvas.addEventListener('mouseup', e => {{
+            if (isDrawing && tool === 'line') {{
+                drawings.push({{type: 'line', p1: startPoint, p2: getLogicalCoords(e), color: dColor, width: dWidth}});
+                isDrawing = false;
+                startPoint = null;
+                currentMouse = null;
+                redrawCanvas();
+                setTool('pan');
+            }}
+        }});
+
+        function redrawCanvas() {{
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawings.forEach(d => {{
+                if (d.type === 'line') {{
+                    let x1 = mainChart.timeScale().logicalToCoordinate(d.p1.logical);
+                    let y1 = mainSeries.priceToCoordinate(d.p1.price);
+                    let x2 = mainChart.timeScale().logicalToCoordinate(d.p2.logical);
+                    let y2 = mainSeries.priceToCoordinate(d.p2.price);
+                    if(x1 !== null && y1 !== null && x2 !== null && y2 !== null) {{
+                        ctx.beginPath();
+                        ctx.moveTo(x1, y1);
+                        ctx.lineTo(x2, y2);
+                        ctx.strokeStyle = d.color;
+                        ctx.lineWidth = d.width;
+                        ctx.stroke();
+                    }}
+                }} else if (d.type === 'text') {{
+                    let x = mainChart.timeScale().logicalToCoordinate(d.p.logical);
+                    let y = mainSeries.priceToCoordinate(d.p.price);
+                    if(x !== null && y !== null) {{
+                        ctx.font = "bold 14px sans-serif";
+                        ctx.fillStyle = d.color;
+                        ctx.fillText(d.text, x, y);
+                    }}
+                }}
+            }});
+            
+            // Draw current active line
+            if (isDrawing && startPoint && currentMouse) {{
+                let x1 = mainChart.timeScale().logicalToCoordinate(startPoint.logical);
+                let y1 = mainSeries.priceToCoordinate(startPoint.price);
+                let x2 = mainChart.timeScale().logicalToCoordinate(currentMouse.logical);
+                let y2 = mainSeries.priceToCoordinate(currentMouse.price);
+                if(x1 !== null && y1 !== null && x2 !== null && y2 !== null) {{
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+                    ctx.strokeStyle = dColor;
+                    ctx.lineWidth = dWidth;
+                    ctx.stroke();
+                }}
+            }}
+        }}
+
+        // Animation loop keeps drawings perfectly anchored to the chart!
+        function animate() {{
+            redrawCanvas();
+            requestAnimationFrame(animate);
+        }}
+        animate();
+        """
 
     html = f"""
     <!DOCTYPE html>
@@ -398,16 +518,25 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
             body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #ffffff; overflow: hidden; }}
             .chart-container {{ width: 100%; display: flex; flex-direction: column; position: relative; }}
             .pane {{ width: 100%; }}
-            #main-chart {{ height: {base_height}px; }}
+            #main-chart-wrapper {{ position: relative; height: {base_height}px; width: 100%; }}
+            #main-chart {{ height: 100%; width: 100%; }}
             .sub-chart {{ height: 160px; border-top: 1px solid #e0e3eb; }}
             .error-box {{ padding: 20px; color: #f23645; text-align: center; border: 1px solid #e0e3eb; border-radius: 6px; margin: 20px; background: #fffafb; }}
             #tv-legend {{ position: absolute; left: 12px; top: 12px; z-index: 100; font-size: 13px; font-weight: 500; color: #131722; background: rgba(255,255,255,0.85); padding: 6px 10px; border-radius: 4px; pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: {hud_display}; }}
+            #drawing-toolbar {{ position: absolute; right: 12px; top: 12px; z-index: 100; display: flex; gap: 4px; background: #fff; padding: 4px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border: 1px solid #e0e3eb; }}
+            #drawing-toolbar button {{ border: none; background: transparent; cursor: pointer; padding: 6px 10px; font-size: 12px; border-radius: 4px; color: #787b86; font-weight: 600; transition: 0.2s; }}
+            #drawing-toolbar button:hover {{ background: #f0f3fa; color: #2962FF; }}
+            #drawing-toolbar button.active {{ background: #2962FF; color: #fff; }}
+            #drawing-layer {{ position: absolute; top: 0; left: 0; z-index: 50; pointer-events: none; width: 100%; height: 100%; }}
         </style>
     </head>
     <body>
         <div id="wrapper" class="chart-container">
-            <div id="tv-legend"><b>{title_text}</b><br><span id="legend-data">Hover over chart to view data</span></div>
-            <div id="main-chart" class="pane"></div>
+            <div id="main-chart-wrapper">
+                <div id="tv-legend"><b>{title_text}</b><br><span id="legend-data">Hover over chart</span></div>
+                {drawing_html}
+                <div id="main-chart"></div>
+            </div>
             {"".join([f'<div id="subchart_{i}" class="pane sub-chart"></div>' for i in range(len(active_osc))])}
         </div>
 
@@ -509,8 +638,19 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
                     }});
                 }}
                 
+                {drawing_js}
+                
                 new ResizeObserver(entries => {{
                     if (entries.length === 0 || entries[0].target !== document.body) return;
+                    
+                    // Sync internal canvas size with DOM bounds
+                    if ('{str(enable_drawing).lower()}' === 'true') {{
+                        const wrp = document.getElementById('main-chart-wrapper');
+                        const cvs = document.getElementById('drawing-layer');
+                        cvs.width = wrp.clientWidth;
+                        cvs.height = wrp.clientHeight;
+                    }}
+                    
                     charts.forEach((c, idx) => {{
                         const elem = document.getElementById(idx === 0 ? 'main-chart' : `subchart_${idx-1}`);
                         if(elem) c.applyOptions({{ width: elem.clientWidth }});
@@ -530,12 +670,11 @@ def render_tv_chart(num_name, den_name, period_str, interval_str, c_type, overla
 def expand_chart_modal(num_name, den_name):
     title = f"{num_name}" if den_name == "None" else f"{num_name} / {den_name}"
     st.markdown(f"### {title}")
-    st.caption("💡 *Tip: Scroll to zoom. Click and drag the price scale (right) to expand/compress vertically.*")
     with st.spinner("Loading High-Res TV Engine..."):
         html_payload, height_px = render_tv_chart(
             num_name, den_name, st.session_state.target_period, interval_selection, 
             chart_type, selected_overlays, selected_oscillators, show_volume, analysis_mode.split()[0], 
-            show_hud=True, base_height=500
+            show_hud=True, base_height=500, enable_drawing=True
         )
         if html_payload: components.html(html_payload, height=height_px, scrolling=False)
 
@@ -543,7 +682,6 @@ def expand_chart_modal(num_name, den_name):
 # --- MULTI-SCREEN TERMINAL TABS ---
 tab1, tab2, tab3 = st.tabs(["🖥️ Macro Overview", "🔍 Dynamic Explorer", "🧮 Correlation Matrix"])
 
-# --- SCREEN 1: MACRO GRID ---
 with tab1:
     st.subheader("🌐 Live Global Markets")
     top_indices = ["S&P 500", "Nasdaq 100", "DAX", "FTSE 100", "STOXX 50", "Nikkei 225", "ASX 200", "Nifty 50", "Gold (Spot)", "Crude Oil", "Bitcoin", "US 20+ Yr Treasury"]
@@ -612,7 +750,7 @@ with tab1:
                         st.session_state.target_num = sec
                         st.session_state.target_den = "Broad Market 500 (IND)"
                         st.rerun()
-                    html_payload, height_px = render_tv_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=200)
+                    html_payload, height_px = render_tv_chart(sec, "Broad Market 500 (IND)", "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=200, enable_drawing=False)
                     if html_payload: components.html(html_payload, height=height_px, scrolling=False)
                         
         with macro_tabs[1]:
@@ -627,7 +765,7 @@ with tab1:
                         st.session_state.target_num = sec
                         st.session_state.target_den = "S&P 500"
                         st.rerun()
-                    html_payload, height_px = render_tv_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=200)
+                    html_payload, height_px = render_tv_chart(sec, "S&P 500", "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=200, enable_drawing=False)
                     if html_payload: components.html(html_payload, height=height_px, scrolling=False)
 
         with macro_tabs[2]:
@@ -642,7 +780,7 @@ with tab1:
                         st.session_state.target_num = num
                         st.session_state.target_den = den
                         st.rerun()
-                    html_payload, height_px = render_tv_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=220)
+                    html_payload, height_px = render_tv_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=220, enable_drawing=False)
                     if html_payload: components.html(html_payload, height=height_px, scrolling=False)
                     
         with macro_tabs[3]:
@@ -658,7 +796,7 @@ with tab1:
                             st.session_state.target_num = num
                             st.session_state.target_den = den
                             st.rerun()
-                        html_payload, height_px = render_tv_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=200)
+                        html_payload, height_px = render_tv_chart(num, den, "6mo", "1d", "Candlestick", [], ["Volume"], True, "Ratio", show_hud=False, base_height=200, enable_drawing=False)
                         if html_payload: components.html(html_payload, height=height_px, scrolling=False)
 
     with col_news:
@@ -745,12 +883,12 @@ with tab2:
         with c_clear:
             if st.button("🗑️ Clear", use_container_width=True): st.rerun()
 
-        st.caption("💡 *Using High-Performance TradingView Engine. Scroll to zoom. Drag the right-axis to adjust scale.*")
-        with st.spinner("Rendering WebGL Engine..."):
+        with st.spinner("Rendering WebGL Engine with Custom Drawing Tool..."):
             html_payload, height_px = render_tv_chart(
                 st.session_state.target_num, st.session_state.target_den, 
                 timeframe, interval_selection, chart_type, 
-                selected_overlays, selected_oscillators, show_volume, analysis_mode.split()[0], show_hud=True, base_height=480
+                selected_overlays, selected_oscillators, show_volume, analysis_mode.split()[0], 
+                show_hud=True, base_height=500, enable_drawing=True
             )
             if html_payload: components.html(html_payload, height=height_px, scrolling=False)
             
@@ -765,7 +903,7 @@ with tab2:
                             monthly_rtn = s_data.groupby(['Year', 'Month'])['Close'].apply(lambda x: (x.iloc[-1]/x.iloc[0] - 1)*100).unstack()
                             monthly_rtn.columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
                             
-                            # Retaining Plotly specifically for Heatmaps (Not supported by TV Lightweight)
+                            # Plotly exclusively retained for the Heatmap visualization
                             fig_sea = go.Figure(data=go.Heatmap(
                                 z=monthly_rtn.values, x=monthly_rtn.columns, y=monthly_rtn.index,
                                 colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
@@ -850,9 +988,9 @@ with tab3:
                 fig_corr.update_yaxes(autorange="reversed")
                 st.plotly_chart(fig_corr, use_container_width=True, config={'displayModeBar': False})
             except Exception as e:
-                st.error("Could not calculate correlation. Please ensure active assets have valid history.")
+                st.error("Could not calculate correlation.")
 
 # --- TELEMETRY ---
 st.markdown("---")
 latency = round(time.time() - start_time, 2)
-st.caption(f"🟢 **System:** Online | ⏱️ **Latency:** {latency}s | 📡 **Engines:** YF API + TV WebGL | 🕒 **Sync:** {pd.Timestamp.now().strftime('%H:%M:%S UTC')} | 📦 **Assets:** {len(st.session_state.asset_dict)}")
+st.caption(f"🟢 **System:** Online | ⏱️ **Latency:** {latency}s | 📡 **Engines:** YF API + TV WebGL Canvas | 🕒 **Sync:** {pd.Timestamp.now().strftime('%H:%M:%S UTC')} | 📦 **Assets:** {len(st.session_state.asset_dict)}")
