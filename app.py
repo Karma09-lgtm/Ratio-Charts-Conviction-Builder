@@ -84,31 +84,39 @@ DEFAULT_WATCHLISTS = {
     "🔥 Tech Watch": {"Nasdaq 100": "^NDX", "US Tech ETF": "XLK", "Nifty IT": "^CNXIT"}
 }
 
-if 'asset_dict' not in st.session_state:
-    st.session_state.asset_dict = DEFAULT_ASSETS.copy()
+if 'asset_dict' not in st.session_state: st.session_state.asset_dict = DEFAULT_ASSETS.copy()
 else:
     for k, v in DEFAULT_ASSETS.items():
-        if k not in st.session_state.asset_dict:
-            st.session_state.asset_dict[k] = v
+        if k not in st.session_state.asset_dict: st.session_state.asset_dict[k] = v
 
-if 'watchlists' not in st.session_state:
-    st.session_state.watchlists = DEFAULT_WATCHLISTS.copy()
+if 'watchlists' not in st.session_state: st.session_state.watchlists = DEFAULT_WATCHLISTS.copy()
 else:
     for k, v in DEFAULT_WATCHLISTS.items():
-        if k not in st.session_state.watchlists:
-            st.session_state.watchlists[k] = v
+        if k not in st.session_state.watchlists: st.session_state.watchlists[k] = v
 
 if 'active_wl' not in st.session_state: st.session_state.active_wl = "⭐ Global Macro"
 if 'target_num' not in st.session_state: st.session_state.target_num = "S&P 500"
 if 'target_den' not in st.session_state: st.session_state.target_den = "None"
 if 'target_period' not in st.session_state: st.session_state.target_period = "1y"
 
+
 # --- SIDEBAR: OMNIBOX & CONTROLS ---
 st.sidebar.title("⚙️ Terminal Setup")
 
-# 1. THE OMNIBOX (Command Line)
-omni_cmd = st.sidebar.text_input("💻 Command Line", placeholder="e.g., Nifty 50 / Gold 1y", help="Type 'Asset1 / Asset2 timeframe'. E.g. 'Nasdaq 100 / S&P 500 6m'")
-if omni_cmd:
+# 1. THE OMNIBOX (Command Line Engine with Go Button)
+st.sidebar.markdown("**💻 Command Line**")
+with st.sidebar.form(key="omni_form", clear_on_submit=True):
+    col_cmd, col_btn = st.columns([3, 1])
+    with col_cmd:
+        omni_cmd = st.text_input("Command", placeholder="e.g. Nifty / Gold 1y", label_visibility="collapsed")
+    with col_btn:
+        # Submit triggers inherently when you hit the Enter key
+        omni_submit = st.form_submit_button("Go ⚡", use_container_width=True)
+
+st.sidebar.caption("*Shortcut: Press **Enter** in the box to run.*")
+
+# Process Command and Force Immediate Rerun
+if omni_submit and omni_cmd:
     parts = omni_cmd.split('/')
     try:
         if len(parts) == 2:
@@ -132,9 +140,15 @@ if omni_cmd:
             if matched_num:
                 st.session_state.target_num = matched_num
                 st.session_state.target_den = "None"
-            if len(num_part_split) > 1 and num_part_split[1].lower() in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]:
-                st.session_state.target_period = num_part_split[1].lower()
-    except Exception: pass
+            if len(num_part_split) > 1:
+                tf = num_part_split[1].lower()
+                if tf in ["1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]: st.session_state.target_period = tf
+        
+        st.toast(f"Loaded: {st.session_state.target_num}", icon="🚀")
+        st.rerun() # Instantly sync dropdowns and chart
+    except Exception:
+        st.toast("Command error. Use format: Asset1 / Asset2 timeframe", icon="⚠️")
+
 
 with st.sidebar.expander("📝 Watchlist Manager", expanded=False):
     new_wl_name = st.text_input("New Watchlist Name")
@@ -149,33 +163,28 @@ with st.sidebar.expander("📝 Watchlist Manager", expanded=False):
 
 st.sidebar.markdown("---")
 
+# 2. STATE-BOUND DROPDOWNS
 with st.sidebar.expander("⚙️ Asset Selection", expanded=True):
     asset_options = ["None"] + list(st.session_state.asset_dict.keys())
-    idx_num = asset_options.index(st.session_state.target_num) if st.session_state.target_num in asset_options else 1
-    idx_den = asset_options.index(st.session_state.target_den) if st.session_state.target_den in asset_options else 0
     
-    selected_asset_name = st.selectbox("Numerator (Asset 1)", asset_options, index=idx_num) 
-    benchmark_name = st.selectbox("Denominator (Asset 2)", asset_options, index=idx_den) 
-    
-    st.session_state.target_num = selected_asset_name
-    st.session_state.target_den = benchmark_name
-    
+    # Bound explicitly to session keys so the Omnibox controls them remotely
+    selected_asset_name = st.selectbox("Numerator (Asset 1)", asset_options, key="target_num") 
+    benchmark_name = st.selectbox("Denominator (Asset 2)", asset_options, key="target_den") 
     analysis_mode = st.radio("Analysis Mode", ["Ratio", "Correlation (20d)"], horizontal=True)
 
 with st.sidebar.expander("⏱️ Time & Style", expanded=True):
     c1, c2 = st.columns(2)
     tf_options = ("1mo", "3mo", "6mo", "1y", "2y", "5y", "max")
-    idx_tf = tf_options.index(st.session_state.target_period) if st.session_state.target_period in tf_options else 3
     
-    with c1: timeframe = st.selectbox("Data Fetch", tf_options, index=idx_tf)
+    with c1: timeframe = st.selectbox("Data Fetch", tf_options, key="target_period")
     with c2: interval_selection = st.selectbox("Interval", ("1d", "1wk", "1mo"))
-    st.session_state.target_period = timeframe
     chart_type = st.selectbox("Style", ("Candlestick", "Bar (OHLC)", "Line"))
 
 with st.sidebar.expander("📈 Technicals & Overlays", expanded=True):
     show_volume = st.checkbox("Show Volume Bar", value=True)
     selected_overlays = st.multiselect("Overlays", ["21 EMA", "50 SMA", "200 EMA", "AVWAP"], default=["50 SMA"])
     selected_oscillators = st.multiselect("Oscillators", ["Volume", "RSI (14)", "MACD (12, 26, 9)", "Drawdown %"], default=["Volume"])
+
 
 # --- HELPERS & DATA ENGINES ---
 def format_large_number(num):
@@ -273,19 +282,17 @@ def fetch_market_news(keyword="None"):
         except: continue
     return news_items[:15]
 
+
 # --- TRADINGVIEW CHART ENGINE WITH 4K EXPORT ---
 TV_CONFIG = {
     'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'drawclosedpath', 'drawcircle', 'drawrect', 'eraseshape'],
     'displayModeBar': True, 
     'displaylogo': False, 
     'scrollZoom': True,
-    # This dictates the ultra-high resolution screenshot behavior
     'toImageButtonOptions': {
         'format': 'png', 
         'filename': 'Macro_Conviction_Builder_Chart',
-        'height': 900,
-        'width': 1600,
-        'scale': 2 # Outputs at 3200x1800 (4K clarity)
+        'height': 900, 'width': 1600, 'scale': 2 # Outputs 4K PNGs
     }
 }
 STATIC_CONFIG = {'displayModeBar': False, 'scrollZoom': False}
@@ -456,6 +463,7 @@ def render_watchlist(key_prefix):
             
             styled_df = df.style.map(lambda x: 'color: #089981; font-weight: bold;' if x > 0 else 'color: #f23645; font-weight: bold;' if x < 0 else '', subset=['Chg %']).format({"Chg %": "{:+.2f}%"})
             event = st.dataframe(styled_df, hide_index=True, use_container_width=True, on_select="rerun", selection_mode="single-row", key=f"{key_prefix}_df")
+            
             if len(event.selection.rows) > 0:
                 selected_asset = df.iloc[event.selection.rows[0]]["Asset"]
                 st.session_state.target_num = selected_asset
@@ -572,7 +580,7 @@ with tab2:
                 header_title = f"{selected_asset_name} / {benchmark_name}" if benchmark_name != "None" else f"{selected_asset_name}"
                 c1.markdown(f"<h3 style='margin-bottom:0;'>{header_title} &nbsp;<span style='color:{clr}; font-size:1.3rem;'>{curr}{last_px:,.2f} ({sgn}{pct_chg:.2f}%)</span></h3>", unsafe_allow_html=True)
                 
-                # 5. FUNDAMENTAL TEAR SHEET
+                # FUNDAMENTAL TEAR SHEET
                 if benchmark_name == "None":
                     funds = fetch_fundamentals(tkr)
                     if funds:
@@ -595,7 +603,7 @@ with tab2:
             fig = render_chart(selected_asset_name, benchmark_name, timeframe, interval_selection, chart_type, selected_overlays, selected_oscillators, show_vol=show_volume, analysis_mode=analysis_mode.split()[0], show_hud=True, show_rangeselector=True, height=700)
             if fig: st.plotly_chart(fig, use_container_width=True, config=TV_CONFIG)
             
-        # 6. SEASONALITY GRID
+        # SEASONALITY GRID
         if selected_asset_name != "None":
             with st.expander("📅 Historical Seasonality Matrix (Monthly % Returns)", expanded=False):
                 with st.spinner("Calculating Seasonality..."):
