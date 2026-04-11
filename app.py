@@ -67,6 +67,7 @@ st.markdown("""
     
     .ai-box { background: #F8F9FA; border-left: 4px solid #2962FF; padding: 15px 20px; border-radius: 0px 8px 8px 0px; font-size: 0.95rem; color: #333; line-height: 1.6; margin-top: 15px; margin-bottom: 20px;}
     .ai-title { font-weight: 700; color: #131722; margin-bottom: 8px; font-size: 1.05rem; }
+    .auth-box { max-width: 400px; margin: 0 auto; padding: 30px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #e0e3eb; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -256,12 +257,27 @@ if 'target_period' not in st.session_state: st.session_state.target_period = "1y
 if 'recent_ratios' not in st.session_state: st.session_state.recent_ratios = []
 if 'active_tab' not in st.session_state: st.session_state.active_tab = "🖥️ Macro Overview"
 
-# --- HEADER ---
-c_title, c_export = st.columns([8, 2])
+# --- PERSISTENT HEADER & LAYOUT MANAGER ---
+c_title, c_layout, c_user = st.columns([6.5, 1.5, 2])
 with c_title: 
     st.title("🌍 Ratio Charts Conviction Builder")
     st.markdown("<p style='color:#787b86; font-size:0.85rem; margin-top:-15px; margin-bottom:15px;'>Powered by Karma Analytics and Advisory Ltd.</p>", unsafe_allow_html=True)
-with c_export:
+
+with c_layout:
+    st.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
+    with st.popover("🎛️ Layout Settings", use_container_width=True):
+        st.markdown("**Toggle Screen Panels**")
+        t_tick = st.checkbox("Ticker Tape", value=st.session_state.show_ticker)
+        t_fav = st.checkbox("Favorites (Left)", value=st.session_state.show_fav)
+        t_news = st.checkbox("News Feed (Right)", value=st.session_state.show_news)
+        if t_tick != st.session_state.show_ticker or t_fav != st.session_state.show_fav or t_news != st.session_state.show_news:
+            st.session_state.show_ticker = t_tick
+            st.session_state.show_fav = t_fav
+            st.session_state.show_news = t_news
+            sync_db()
+            st.rerun()
+
+with c_user:
     st.markdown("<div style='margin-top:15px;'></div>", unsafe_allow_html=True)
     with st.popover(f"👤 {st.session_state.username.upper()}", use_container_width=True):
         if st.button("🚪 Logout", use_container_width=True):
@@ -359,14 +375,12 @@ if omni_submit and omni_cmd:
         else: st.toast(f"Could not locate '{num_query}'.", icon="⚠️")
     except: st.toast("Command error.", icon="⚠️")
 
-with st.sidebar.expander("🧩 Layout Manager", expanded=False):
-    st.caption("Toggle sections to free up screen real estate.")
-    t_tick = st.checkbox("Show Top Ticker Tape", value=st.session_state.show_ticker)
-    t_fav = st.checkbox("Show Favorites (Left Panel)", value=st.session_state.show_fav)
-    t_news = st.checkbox("Show Watchlist/News (Right Panel)", value=st.session_state.show_news)
-    if t_tick != st.session_state.show_ticker or t_fav != st.session_state.show_fav or t_news != st.session_state.show_news:
-        st.session_state.show_ticker, st.session_state.show_fav, st.session_state.show_news = t_tick, t_fav, t_news
-        sync_db()
+with st.sidebar.expander("🧹 Data & History Management", expanded=False):
+    del_timeframe = st.selectbox("Select History to Delete", ["Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time History"])
+    if st.button("🗑️ Reset & Clear Cache", use_container_width=True):
+        st.cache_data.clear()
+        st.toast("Cache cleared.", icon="✅")
+        time.sleep(0.5)
         st.rerun()
 
 st.sidebar.markdown("---")
@@ -1336,7 +1350,6 @@ elif st.session_state.active_tab == "🔍 Dynamic Explorer":
                             monthly_rtn = s_data.groupby(['Year', 'Month'])['Close'].apply(lambda x: (x.iloc[-1]/x.iloc[0] - 1)*100).unstack()
                             monthly_rtn.columns = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
                             
-                            # Plotly exclusively retained for the Heatmap visualization
                             fig_sea = go.Figure(data=go.Heatmap(
                                 z=monthly_rtn.values, x=monthly_rtn.columns, y=monthly_rtn.index,
                                 colorscale=[[0, '#F23645'], [0.5, '#ffffff'], [1, '#089981']],
