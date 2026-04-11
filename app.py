@@ -20,13 +20,9 @@ start_time = time.time()
 st.markdown("""
 <style>
     .stApp { background-color: #f8f9fd; color: #131722; font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif; }
-    #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     
-    /* CRITICAL UI FIX: Forcefully unhide the Streamlit sidebar toggle arrow */
-    [data-testid="collapsedControl"], [data-testid="stSidebarCollapsedControl"] {
-        visibility: visible !important;
-        z-index: 99999 !important;
-    }
+    /* Removed 'header {visibility: hidden;}' to permanently fix the sidebar toggle bug */
+    #MainMenu {visibility: hidden;} footer {visibility: hidden;} 
     
     [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
         background-color: #ffffff; border-radius: 8px; border: 1px solid #e0e3eb; padding: 12px; box-shadow: 0px 2px 4px rgba(19, 23, 34, 0.03);
