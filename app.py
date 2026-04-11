@@ -22,6 +22,12 @@ st.markdown("""
     .stApp { background-color: #f8f9fd; color: #131722; font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     
+    /* CRITICAL UI FIX: Forcefully unhide the Streamlit sidebar toggle arrow */
+    [data-testid="collapsedControl"], [data-testid="stSidebarCollapsedControl"] {
+        visibility: visible !important;
+        z-index: 99999 !important;
+    }
+    
     [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
         background-color: #ffffff; border-radius: 8px; border: 1px solid #e0e3eb; padding: 12px; box-shadow: 0px 2px 4px rgba(19, 23, 34, 0.03);
     }
@@ -1241,7 +1247,9 @@ if st.session_state.active_tab == "🖥️ Macro Overview":
         with col_news:
             st.subheader("📋 Watchlists")
             with st.container(border=True):
-                active_wl = st.selectbox("Select", list(st.session_state.watchlists.keys()), index=list(st.session_state.watchlists.keys()).index(st.session_state.active_wl) if st.session_state.active_wl in st.session_state.watchlists else 0, label_visibility="collapsed", key="wl_sel")
+                wl_opts = list(st.session_state.watchlists.keys())
+                idx_wl = wl_opts.index(st.session_state.active_wl) if st.session_state.active_wl in wl_opts else 0
+                active_wl = st.selectbox("Select", wl_opts, index=idx_wl, label_visibility="collapsed", key="wl_sel")
                 st.session_state.active_wl = active_wl
                 
                 wl_data = fetch_bulk_watchlist(st.session_state.watchlists[active_wl])
